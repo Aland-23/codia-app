@@ -1,0 +1,19 @@
+# Nunca subir las claves de API a GitHub
+.env
+.streamlit/secrets.toml
+
+# Archivos típicos de Python que no hace falta subir
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Capacitor (carpeta mobile/)
+node_modules/
+mobile/android/
+mobile/ios/
+
+# Base de datos local y archivos subidos por los usuarios (no son código,
+# y las imágenes/mensajes de la gente que use la app no deben ir a GitHub)
+backend/codia.db
+backend/uploads/

@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>CodIA - Asistente de Programación</title>
+<meta name="theme-color" content="#2575fc">
+<meta name="description" content="CodIA, asistente de programación - Proyecto de grado">
+
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+    html, body { height: 100%; overscroll-behavior: none; }
+    body { display: flex; justify-content: center; align-items: center; background: linear-gradient(135deg, #6a11cb, #2575fc); }
+
+    .app-shell {
+        width: 100%; max-width: 900px; height: 100vh; max-height: 760px;
+        background: #ffffff; border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        display: flex; overflow: hidden; position: relative;
+    }
+
+    .sidebar { width: 240px; flex-shrink: 0; background: #101425; color: #fff; display: flex; flex-direction: column; transition: transform 0.25s ease; z-index: 20; }
+    .sidebar-header { padding: 14px; display: flex; align-items: center; gap: 8px; }
+    .sidebar-header .logo { width: 26px; height: 26px; flex-shrink: 0; }
+    .sidebar-header span { font-weight: 700; font-size: 15px; }
+    .btn-nuevo-chat { margin: 0 12px 12px; padding: 10px; background: transparent; border: 1px solid #4a4f66; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; }
+    .btn-nuevo-chat:hover { background: #1c2036; border-color: #8ab4ff; }
+    .etiqueta-seccion { color: #8a8fa3; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin: 4px 16px 6px; }
+    .lista-conversaciones { flex: 1; overflow-y: auto; padding: 0 8px; }
+    .item-conversacion { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 10px; border-radius: 8px; margin-bottom: 2px; font-size: 13px; color: #d6d8e2; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-conversacion:hover { background: #1c2036; }
+    .item-conversacion.activa { background: #232849; color: #fff; }
+    .item-conversacion .titulo-conv { overflow: hidden; text-overflow: ellipsis; }
+    .item-conversacion .btn-borrar { background: none; border: none; color: #8a8fa3; cursor: pointer; font-size: 13px; flex-shrink: 0; padding: 2px 4px; }
+    .item-conversacion .btn-borrar:hover { color: #ff6b6b; }
+    .btn-cerrar-sidebar { display: none; position: absolute; top: 10px; right: -34px; width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,0.35); color: #fff; border: none; font-size: 14px; cursor: pointer; }
+
+    .main-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .chat-header { background: #2575fc; color: white; padding: 14px 16px; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .btn-menu { display: none; background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; }
+    .chat-header .titulos { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+    .chat-header .subtitulo { font-size: 11px; font-weight: 400; opacity: 0.85; }
+    .toggle-voz { margin-left: auto; background: rgba(255,255,255,0.15); border: none; color: #fff; border-radius: 14px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+    .toggle-voz.activo { background: #ffffff; color: #2575fc; font-weight: 700; }
+    .estado-conexion { font-size: 10px; padding: 4px 12px; text-align: center; flex-shrink: 0; }
+    .estado-conexion.ok { background: #e6f4ea; color: #1e7e34; }
+    .estado-conexion.aviso { background: #fff3cd; color: #856404; }
+    .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f5f7fb; }
+
+    .message { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.45; animation: fadeIn 0.3s ease-in-out; word-wrap: break-word; }
+    .message.user { align-self: flex-end; background: #2575fc; color: white; border-bottom-right-radius: 4px; }
+    .message.ia { align-self: flex-start; background: #e4e6eb; color: #1c1e21; border-bottom-left-radius: 4px; }
+    .message.error { align-self: flex-start; background: #fdecea; color: #a02b1f; border-bottom-left-radius: 4px; }
+    .message p { margin: 0 0 6px; white-space: pre-wrap; }
+    .message p:last-child { margin-bottom: 0; }
+    .message img.adjunta { max-width: 100%; border-radius: 8px; margin-top: 6px; display: block; }
+    .chip-documento { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.08); border-radius: 8px; padding: 4px 8px; font-size: 12px; margin-top: 4px; }
+    .btn-leer { background: none; border: none; cursor: pointer; font-size: 13px; margin-left: 6px; opacity: 0.7; }
+    .btn-leer:hover { opacity: 1; }
+
+    .bloque-codigo { margin: 8px 0; border-radius: 10px; overflow: hidden; background: #1e1e2e; }
+    .bloque-codigo-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #14141f; font-size: 11px; color: #9aa0b4; }
+    .bloque-codigo-header .acciones { display: flex; gap: 8px; }
+    .bloque-codigo-header button { background: none; border: 1px solid #3a3f55; color: #d6d8e2; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+    .bloque-codigo-header button:hover { background: #2a2f45; }
+    .bloque-codigo-header button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .bloque-codigo pre { margin: 0; padding: 10px; overflow-x: auto; font-size: 12.5px; color: #e6e6f0; font-family: Consolas, 'Courier New', monospace; }
+    .salida-codigo { padding: 8px 10px; font-size: 12px; font-family: Consolas, monospace; white-space: pre-wrap; border-top: 1px solid #2a2f45; }
+    .salida-codigo.ok { color: #8fe3a3; }
+    .salida-codigo.err { color: #ff9b9b; }
+    .btn-corregir { margin: 6px 10px 10px; background: #ff9b9b; border: none; color: #1e1e2e; font-weight: 700; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+    .btn-corregir:hover { background: #ffb3b3; }
+    .btn-corregir:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .bloque-diagrama { margin: 8px 0; padding: 10px; background: #ffffff; border: 1px solid #e0e3ec; border-radius: 10px; overflow-x: auto; }
+    .bloque-diagrama svg { max-width: 100%; }
+    .bloque-diagrama.error-diagrama { font-size: 12px; color: #a02b1f; font-family: Consolas, monospace; }
+
+    .typing { align-self: flex-start; font-size: 13px; color: #888; font-style: italic; padding-left: 4px; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    .preview-adjunto { display: none; align-items: center; gap: 8px; padding: 8px 12px; background: #eef2fb; border-top: 1px solid #ddd; flex-shrink: 0; }
+    .preview-adjunto img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+    .preview-adjunto span { font-size: 12px; color: #555; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-adjunto button { background: none; border: none; font-size: 16px; cursor: pointer; color: #a02b1f; }
+
+    .barra-modo { display: none; align-items: center; gap: 8px; padding: 6px 12px; background: #f0e9ff; border-top: 1px solid #ddd; font-size: 12px; color: #5a3d99; flex-shrink: 0; }
+    .barra-modo button { margin-left: auto; background: none; border: none; color: #5a3d99; cursor: pointer; font-size: 13px; }
+
+    .chat-input { display: flex; padding: 10px 12px; background: white; border-top: 1px solid #ddd; gap: 6px; flex-shrink: 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); flex-wrap: nowrap; }
+    .chat-input input[type="text"] { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 16px; }
+    .chat-input input[type="text"]:focus { border-color: #2575fc; }
+    .btn-icono { background: #eef2fb; border: 1px solid #ccc; border-radius: 50%; width: 38px; height: 38px; font-size: 15px; cursor: pointer; flex-shrink: 0; }
+    .btn-icono:hover { background: #dde6fb; }
+    .btn-icono.activo { background: #2575fc; color: #fff; border-color: #2575fc; }
+    .chat-input button.enviar { background: #2575fc; color: white; border: none; border-radius: 20px; padding: 10px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; flex-shrink: 0; }
+    .chat-input button.enviar:disabled { background: #9db8e8; cursor: not-allowed; }
+    .chat-input button.enviar:hover:not(:disabled) { background: #1a5fd0; }
+
+    .overlay-sidebar { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 15; }
+
+    @media (max-width: 640px) {
+        .app-shell { max-width: 100%; height: 100vh; max-height: 100vh; border-radius: 0; }
+        .sidebar { position: absolute; top: 0; left: 0; bottom: 0; transform: translateX(-100%); }
+        .sidebar.abierta { transform: translateX(0); }
+        .btn-cerrar-sidebar.abierta { display: block; }
+        .btn-menu { display: block; }
+        .overlay-sidebar.abierta { display: block; }
+        .chat-input { padding-left: 8px; padding-right: 8px; }
+    }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <svg class="logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="32" cy="32" r="30" fill="#2575fc"/>
+                <text x="32" y="40" font-family="Consolas, monospace" font-size="20" font-weight="bold" text-anchor="middle" fill="#ffffff">&lt;/&gt;</text>
+            </svg>
+            <span>CodIA</span>
+        </div>
+        <button class="btn-nuevo-chat" id="btnNuevoChat">✏️ Nuevo chat</button>
+        <div class="etiqueta-seccion">RECIENTES</div>
+        <div class="lista-conversaciones" id="listaConversaciones"></div>
+        <button class="btn-cerrar-sidebar" id="btnCerrarSidebar">✕</button>
+    </aside>
+
+    <div class="overlay-sidebar" id="overlaySidebar"></div>
+
+    <div class="main-chat">
+        <div class="chat-header">
+            <button class="btn-menu" id="btnMenu">☰</button>
+            <div class="titulos">
+                <span>CodIA</span>
+                <span class="subtitulo">Asistente de Programación · Proyecto de Grado</span>
+            </div>
+            <button class="toggle-voz" id="toggleVoz" title="Leer las respuestas en voz alta">🔊 Voz</button>
+        </div>
+
+        <div id="estadoConexion" class="estado-conexion aviso">Conectando con el servidor...</div>
+        <div class="chat-messages" id="chatMessages"></div>
+
+        <div class="barra-modo" id="barraModoImagen">
+            🎨 Modo generar imagen: escribe una descripción y presiona enviar
+            <button id="btnCancelarModoImagen">Cancelar</button>
+        </div>
+
+        <div class="preview-adjunto" id="previewAdjunto">
+            <img id="previewAdjuntoThumb" src="" alt="" style="display:none;">
+            <span id="previewAdjuntoNombre"></span>
+            <button id="btnQuitarAdjunto" title="Quitar">✕</button>
+        </div>
+
+        <div class="chat-input">
+            <button class="btn-icono" id="btnAdjuntarImagen" title="Adjuntar imagen">📎</button>
+            <button class="btn-icono" id="btnAdjuntarDocumento" title="Adjuntar PDF/Word">📄</button>
+            <button class="btn-icono" id="btnModoImagen" title="Generar una imagen">🎨</button>
+            <button class="btn-icono" id="btnMicrofono" title="Hablar en vez de escribir">🎤</button>
+            <input type="file" id="inputImagen" accept="image/*" hidden>
+            <input type="file" id="inputDocumento" accept=".pdf,.docx" hidden>
+            <input type="text" id="userInput" placeholder="Escribe tu mensaje..." autocomplete="off">
+            <button class="enviar" id="sendBtn">Enviar</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const API_URL = window.CODIA_API_URL || 'http://localhost:8000';
+
+    if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
+
+    let usuarioId = localStorage.getItem('codia_usuario_id');
+    if (!usuarioId) { usuarioId = crypto.randomUUID(); localStorage.setItem('codia_usuario_id', usuarioId); }
+
+    const chatMessages = document.getElementById('chatMessages');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const estadoConexion = document.getElementById('estadoConexion');
+    const sidebar = document.getElementById('sidebar');
+    const listaConversaciones = document.getElementById('listaConversaciones');
+    const btnMenu = document.getElementById('btnMenu');
+    const btnCerrarSidebar = document.getElementById('btnCerrarSidebar');
+    const overlaySidebar = document.getElementById('overlaySidebar');
+    const btnAdjuntarImagen = document.getElementById('btnAdjuntarImagen');
+    const inputImagen = document.getElementById('inputImagen');
+    const btnAdjuntarDocumento = document.getElementById('btnAdjuntarDocumento');
+    const inputDocumento = document.getElementById('inputDocumento');
+    const previewAdjunto = document.getElementById('previewAdjunto');
+    const previewAdjuntoThumb = document.getElementById('previewAdjuntoThumb');
+    const previewAdjuntoNombre = document.getElementById('previewAdjuntoNombre');
+    const btnQuitarAdjunto = document.getElementById('btnQuitarAdjunto');
+    const btnNuevoChat = document.getElementById('btnNuevoChat');
+    const btnModoImagen = document.getElementById('btnModoImagen');
+    const barraModoImagen = document.getElementById('barraModoImagen');
+    const btnCancelarModoImagen = document.getElementById('btnCancelarModoImagen');
+    const btnMicrofono = document.getElementById('btnMicrofono');
+    const toggleVoz = document.getElementById('toggleVoz');
+
+    let conversacionActualId = null;
+    let imagenPendiente = null;
+    let documentoPendiente = null;
+    let modoGenerarImagen = false;
+    let vozActiva = false;
+    let capacidades = {};
+    let contadorDiagramas = 0;
+
+    // ===== Sidebar =====
+    function abrirSidebar() { sidebar.classList.add('abierta'); btnCerrarSidebar.classList.add('abierta'); overlaySidebar.classList.add('abierta'); }
+    function cerrarSidebar() { sidebar.classList.remove('abierta'); btnCerrarSidebar.classList.remove('abierta'); overlaySidebar.classList.remove('abierta'); }
+    btnMenu.addEventListener('click', abrirSidebar);
+    btnCerrarSidebar.addEventListener('click', cerrarSidebar);
+    overlaySidebar.addEventListener('click', cerrarSidebar);
+
+    // ===== Voz: lectura en voz alta (Web Speech API - SpeechSynthesis) =====
+    toggleVoz.addEventListener('click', () => {
+        vozActiva = !vozActiva;
+        toggleVoz.classList.toggle('activo', vozActiva);
+        if (!vozActiva) speechSynthesis.cancel();
+    });
+    function leerEnVozAlta(texto) {
+        if (!vozActiva || !('speechSynthesis' in window)) return;
+        const textoLimpio = texto.replace(/```[\s\S]*?```/g, 'código omitido.');
+        const utterance = new SpeechSynthesisUtterance(textoLimpio);
+        utterance.lang = 'es-ES';
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
+    }
+
+    // ===== Voz: entrada por micrófono (Web Speech API - SpeechRecognition) =====
+    const ReconocimientoVoz = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let reconocimiento = null;
+    if (ReconocimientoVoz) {
+        reconocimiento = new ReconocimientoVoz();
+        reconocimiento.lang = 'es-ES';
+        reconocimiento.interimResults = false;
+        reconocimiento.onresult = (evento) => {
+            userInput.value = evento.results[0][0].transcript;
+        };
+        reconocimiento.onend = () => btnMicrofono.classList.remove('activo');
+        reconocimiento.onerror = () => btnMicrofono.classList.remove('activo');
+    } else {
+        btnMicrofono.style.display = 'none'; // el navegador no soporta reconocimiento de voz (ej. Firefox)
+    }
+    btnMicrofono.addEventListener('click', () => {
+        if (!reconocimiento) return;
+        if (btnMicrofono.classList.contains('activo')) {
+            reconocimiento.stop();
+        } else {
+            btnMicrofono.classList.add('activo');
+            reconocimiento.start();
+        }
+    });
+
+    async function verificarEstado() {
+        try {
+            const res = await fetch(`${API_URL}/api/estado`);
+            capacidades = await res.json();
+            btnAdjuntarImagen.style.display = capacidades.imagenes_disponible ? 'block' : 'none';
+            btnAdjuntarDocumento.style.display = capacidades.documentos_disponible ? 'block' : 'none';
+            btnModoImagen.style.display = capacidades.generar_imagenes_disponible ? 'block' : 'none';
+            if (capacidades.gemini_disponible || capacidades.groq_disponible) {
+                estadoConexion.textContent = '● Conectado a CodIA';
+                estadoConexion.className = 'estado-conexion ok';
+            } else {
+                estadoConexion.textContent = '⚠ Servidor sin claves de IA configuradas';
+                estadoConexion.className = 'estado-conexion aviso';
+            }
+        } catch (e) {
+            estadoConexion.textContent = '⚠ No se pudo conectar al servidor (¿está corriendo?)';
+            estadoConexion.className = 'estado-conexion aviso';
+        }
+    }
+
+    async function cargarListaConversaciones() {
+        const res = await fetch(`${API_URL}/api/conversaciones?usuario_id=${usuarioId}`);
+        const conversaciones = await res.json();
+        listaConversaciones.innerHTML = '';
+        conversaciones.forEach((c) => {
+            const item = document.createElement('div');
+            item.className = 'item-conversacion' + (c.id === conversacionActualId ? ' activa' : '');
+            item.innerHTML = `<span class="titulo-conv">${escapeHtml(c.titulo)}</span><button class="btn-borrar" title="Borrar">🗑</button>`;
+            item.querySelector('.titulo-conv').addEventListener('click', () => abrirConversacion(c.id));
+            item.querySelector('.btn-borrar').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await fetch(`${API_URL}/api/conversaciones/${c.id}`, { method: 'DELETE' });
+                if (c.id === conversacionActualId) conversacionActualId = null;
+                await cargarListaConversaciones();
+                if (!conversacionActualId) await iniciar();
+            });
+            listaConversaciones.appendChild(item);
+        });
+        return conversaciones;
+    }
+
+    async function crearConversacion() {
+        const res = await fetch(`${API_URL}/api/conversaciones`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuario_id: usuarioId }),
+        });
+        return res.json();
+    }
+
+    async function abrirConversacion(id) {
+        conversacionActualId = id;
+        cerrarSidebar();
+        const res = await fetch(`${API_URL}/api/conversaciones/${id}/mensajes`);
+        const mensajes = await res.json();
+        chatMessages.innerHTML = '';
+        if (mensajes.length === 0) {
+            agregarMensajeIA('¡Hola! Soy CodIA, tu asistente de programación. Escríbeme algo para comenzar 😊');
+        } else {
+            mensajes.forEach((m) => {
+                if (m.rol === 'user') agregarMensajeUsuario(m.contenido, m.imagen_url, m.documento_nombre);
+                else agregarMensajeIA(m.contenido, m.imagen_url);
+            });
+        }
+        await cargarListaConversaciones();
+    }
+
+    btnNuevoChat.addEventListener('click', async () => { await abrirConversacion((await crearConversacion()).id); });
+
+    async function iniciar() {
+        await verificarEstado();
+        const conversaciones = await cargarListaConversaciones();
+        if (conversaciones.length > 0) await abrirConversacion(conversaciones[0].id);
+        else await abrirConversacion((await crearConversacion()).id);
+    }
+
+    function escapeHtml(texto) { const d = document.createElement('div'); d.textContent = texto; return d.innerHTML; }
+    function scrollAbajo() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+
+    function agregarMensajeUsuario(texto, imagenUrl, documentoNombre) {
+        const div = document.createElement('div');
+        div.className = 'message user';
+        let html = `<p>${escapeHtml(texto)}</p>`;
+        if (imagenUrl) html += `<img class="adjunta" src="${API_URL}${imagenUrl}" alt="Imagen adjunta">`;
+        if (documentoNombre) html += `<div class="chip-documento">📄 ${escapeHtml(documentoNombre)}</div>`;
+        div.innerHTML = html;
+        chatMessages.appendChild(div);
+        scrollAbajo();
+    }
+
+    function agregarMensajeIA(texto, imagenUrl) {
+        const div = document.createElement('div');
+        div.className = 'message ia';
+
+        const regex = /```(\w+)?\n([\s\S]*?)```/g;
+        let ultimoIndice = 0, coincidencia, huboBloque = false;
+        while ((coincidencia = regex.exec(texto)) !== null) {
+            huboBloque = true;
+            const textoPrevio = texto.slice(ultimoIndice, coincidencia.index).trim();
+            if (textoPrevio) { const p = document.createElement('p'); p.textContent = textoPrevio; div.appendChild(p); }
+            const lenguaje = (coincidencia[1] || 'texto').toLowerCase();
+            div.appendChild(lenguaje === 'mermaid' ? crearBloqueDiagrama(coincidencia[2]) : crearBloqueCodigo(lenguaje, coincidencia[2]));
+            ultimoIndice = regex.lastIndex;
+        }
+        const resto = texto.slice(ultimoIndice).trim();
+        if (resto || !huboBloque) { const p = document.createElement('p'); p.textContent = resto || texto; div.appendChild(p); }
+
+        if (imagenUrl) {
+            const img = document.createElement('img');
+            img.className = 'adjunta';
+            img.src = `${API_URL}${imagenUrl}`;
+            div.appendChild(img);
+        }
+
+        if ('speechSynthesis' in window) {
+            const btnLeer = document.createElement('button');
+            btnLeer.className = 'btn-leer';
+            btnLeer.title = 'Leer en voz alta';
+            btnLeer.textContent = '🔊';
+            btnLeer.addEventListener('click', () => leerEnVozAlta(texto));
+            div.appendChild(btnLeer);
+        }
+
+        chatMessages.appendChild(div);
+        scrollAbajo();
+        return div;
+    }
+
+    function crearBloqueDiagrama(definicion) {
+        const contenedor = document.createElement('div');
+        contenedor.className = 'bloque-diagrama';
+        const idDiagrama = `mermaid-${Date.now()}-${contadorDiagramas++}`;
+        if (window.mermaid) {
+            mermaid.render(idDiagrama, definicion.trim())
+                .then(({ svg }) => { contenedor.innerHTML = svg; })
+                .catch(() => { contenedor.classList.add('error-diagrama'); contenedor.textContent = 'No se pudo dibujar el diagrama:\n' + definicion; });
+        } else {
+            contenedor.textContent = definicion;
+        }
+        return contenedor;
+    }
+
+    const LENGUAJES_EJECUTABLES = ['python', 'py', 'javascript', 'js', 'typescript', 'ts', 'java', 'c', 'cpp', 'c++', 'csharp', 'c#', 'php', 'ruby', 'rb', 'go'];
+
+    function crearBloqueCodigo(lenguaje, codigo) {
+        const contenedor = document.createElement('div');
+        contenedor.className = 'bloque-codigo';
+        const header = document.createElement('div');
+        header.className = 'bloque-codigo-header';
+        const etiqueta = document.createElement('span');
+        etiqueta.textContent = lenguaje;
+        header.appendChild(etiqueta);
+
+        const acciones = document.createElement('div');
+        acciones.className = 'acciones';
+        const btnCopiar = document.createElement('button');
+        btnCopiar.textContent = '📋 Copiar';
+        btnCopiar.addEventListener('click', () => {
+            navigator.clipboard.writeText(codigo);
+            btnCopiar.textContent = '✅ Copiado';
+            setTimeout(() => (btnCopiar.textContent = '📋 Copiar'), 1500);
+        });
+        acciones.appendChild(btnCopiar);
+
+        const soportado = LENGUAJES_EJECUTABLES.includes(lenguaje.toLowerCase());
+        const btnEjecutar = document.createElement('button');
+        btnEjecutar.textContent = '▶ Ejecutar';
+        if (!soportado || !capacidades.ejecutar_codigo_disponible) btnEjecutar.disabled = true;
+        acciones.appendChild(btnEjecutar);
+        header.appendChild(acciones);
+        contenedor.appendChild(header);
+
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = codigo.replace(/\n$/, '');
+        pre.appendChild(code);
+        contenedor.appendChild(pre);
+
+        btnEjecutar.addEventListener('click', async () => {
+            btnEjecutar.disabled = true;
+            btnEjecutar.textContent = 'Ejecutando...';
+            let salidaDiv = contenedor.querySelector('.salida-codigo');
+            if (!salidaDiv) { salidaDiv = document.createElement('div'); salidaDiv.className = 'salida-codigo'; contenedor.appendChild(salidaDiv); }
+            const btnCorregirPrevio = contenedor.querySelector('.btn-corregir');
+            if (btnCorregirPrevio) btnCorregirPrevio.remove();
+
+            try {
+                const res = await fetch(`${API_URL}/api/ejecutar-codigo`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lenguaje, codigo }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Error al ejecutar');
+
+                if (data.error) {
+                    salidaDiv.className = 'salida-codigo err';
+                    salidaDiv.textContent = data.error;
+                    const btnCorregir = document.createElement('button');
+                    btnCorregir.className = 'btn-corregir';
+                    btnCorregir.textContent = '🩹 Corregir con IA';
+                    btnCorregir.addEventListener('click', () => {
+                        btnCorregir.disabled = true;
+                        btnCorregir.textContent = 'Pidiendo corrección...';
+                        const promptInterno = `Este código en ${lenguaje} me dio un error al ejecutarlo. Corrígelo y explica en 1-2 frases qué estaba mal.\n\nCódigo:\n\`\`\`${lenguaje}\n${codigo}\n\`\`\`\n\nError:\n${data.error}`;
+                        enviarMensajeInterno(promptInterno, '🩹 Pedí que CodIA corrija este error');
+                    });
+                    contenedor.appendChild(btnCorregir);
+                } else {
+                    salidaDiv.className = 'salida-codigo ok';
+                    salidaDiv.textContent = data.salida || '(sin salida)';
+                }
+            } catch (e) {
+                salidaDiv.className = 'salida-codigo err';
+                salidaDiv.textContent = 'No se pudo ejecutar: ' + e.message;
+            } finally {
+                btnEjecutar.disabled = !soportado || !capacidades.ejecutar_codigo_disponible;
+                btnEjecutar.textContent = '▶ Ejecutar';
+                scrollAbajo();
+            }
+        });
+        return contenedor;
+    }
+
+    function mostrarEscribiendo() {
+        const typing = document.createElement('div');
+        typing.classList.add('typing'); typing.id = 'typingIndicator'; typing.textContent = 'CodIA está escribiendo...';
+        chatMessages.appendChild(typing); scrollAbajo();
+    }
+    function quitarEscribiendo() { const t = document.getElementById('typingIndicator'); if (t) t.remove(); }
+
+    // ===== Adjuntar imagen =====
+    btnAdjuntarImagen.addEventListener('click', () => inputImagen.click());
+    inputImagen.addEventListener('change', () => {
+        const archivo = inputImagen.files[0];
+        if (!archivo) return;
+        documentoPendiente = null;
+        const lector = new FileReader();
+        lector.onload = () => {
+            const base64 = lector.result.split(',')[1];
+            imagenPendiente = { base64, mime: archivo.type, nombre: archivo.name };
+            previewAdjuntoThumb.src = lector.result;
+            previewAdjuntoThumb.style.display = 'block';
+            previewAdjuntoNombre.textContent = archivo.name;
+            previewAdjunto.style.display = 'flex';
+        };
+        lector.readAsDataURL(archivo);
+    });
+
+    // ===== Adjuntar documento (PDF / Word) =====
+    btnAdjuntarDocumento.addEventListener('click', () => inputDocumento.click());
+    inputDocumento.addEventListener('change', () => {
+        const archivo = inputDocumento.files[0];
+        if (!archivo) return;
+        imagenPendiente = null;
+        const lector = new FileReader();
+        lector.onload = () => {
+            const base64 = lector.result.split(',')[1];
+            documentoPendiente = { base64, mime: archivo.type, nombre: archivo.name };
+            previewAdjuntoThumb.style.display = 'none';
+            previewAdjuntoNombre.textContent = '📄 ' + archivo.name;
+            previewAdjunto.style.display = 'flex';
+        };
+        lector.readAsDataURL(archivo);
+    });
+
+    btnQuitarAdjunto.addEventListener('click', () => {
+        imagenPendiente = null; documentoPendiente = null;
+        inputImagen.value = ''; inputDocumento.value = '';
+        previewAdjunto.style.display = 'none';
+    });
+
+    // ===== Modo generar imagen =====
+    btnModoImagen.addEventListener('click', () => {
+        modoGenerarImagen = true;
+        btnModoImagen.classList.add('activo');
+        barraModoImagen.style.display = 'flex';
+        userInput.placeholder = 'Describe la imagen que quieres generar...';
+        userInput.focus();
+    });
+    function salirModoImagen() {
+        modoGenerarImagen = false;
+        btnModoImagen.classList.remove('activo');
+        barraModoImagen.style.display = 'none';
+        userInput.placeholder = 'Escribe tu mensaje...';
+    }
+    btnCancelarModoImagen.addEventListener('click', salirModoImagen);
+
+    async function generarImagen(prompt) {
+        agregarMensajeUsuario(`🎨 Genera una imagen: ${prompt}`, null, null);
+        sendBtn.disabled = true;
+        mostrarEscribiendo();
+        try {
+            const res = await fetch(`${API_URL}/api/generar-imagen`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ usuario_id: usuarioId, conversacion_id: conversacionActualId, prompt }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'No se pudo generar la imagen');
+            quitarEscribiendo();
+            agregarMensajeIA(`Aquí tienes la imagen que pediste: "${prompt}"`, data.imagen_url);
+            await cargarListaConversaciones();
+        } catch (error) {
+            quitarEscribiendo();
+            const div = document.createElement('div');
+            div.className = 'message error';
+            div.textContent = `No se pudo generar la imagen: ${error.message}`;
+            chatMessages.appendChild(div);
+            scrollAbajo();
+        } finally {
+            sendBtn.disabled = false;
+            salirModoImagen();
+        }
+    }
+
+    // ===== Envío central de mensajes de texto/imagen/documento =====
+    async function enviarMensajeInterno(textoParaLaIA, textoParaMostrar) {
+        agregarMensajeUsuario(textoParaMostrar, null, documentoPendiente ? documentoPendiente.nombre : null);
+        if (imagenPendiente) {
+            const ultimaBurbuja = chatMessages.lastElementChild;
+            const img = document.createElement('img');
+            img.className = 'adjunta';
+            img.src = previewAdjuntoThumb.src;
+            ultimaBurbuja.appendChild(img);
+        }
+
+        const cuerpo = {
+            usuario_id: usuarioId,
+            conversacion_id: conversacionActualId,
+            mensaje: textoParaLaIA,
+            imagen_base64: imagenPendiente ? imagenPendiente.base64 : null,
+            imagen_mime: imagenPendiente ? imagenPendiente.mime : null,
+            documento_base64: documentoPendiente ? documentoPendiente.base64 : null,
+            documento_mime: documentoPendiente ? documentoPendiente.mime : null,
+            documento_nombre: documentoPendiente ? documentoPendiente.nombre : null,
+        };
+
+        imagenPendiente = null; documentoPendiente = null;
+        inputImagen.value = ''; inputDocumento.value = '';
+        previewAdjunto.style.display = 'none';
+        sendBtn.disabled = true;
+        mostrarEscribiendo();
+
+        try {
+            const res = await fetch(`${API_URL}/api/chat`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cuerpo),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || `Error del servidor (${res.status})`);
+            quitarEscribiendo();
+            agregarMensajeIA(data.respuesta);
+            leerEnVozAlta(data.respuesta);
+            await cargarListaConversaciones();
+        } catch (error) {
+            quitarEscribiendo();
+            const div = document.createElement('div');
+            div.className = 'message error';
+            div.textContent = `No se pudo obtener respuesta: ${error.message}`;
+            chatMessages.appendChild(div);
+            scrollAbajo();
+        } finally {
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+    }
+
+    function enviarMensaje() {
+        const texto = userInput.value.trim();
+        if (texto === '' && !imagenPendiente && !documentoPendiente) return;
+        userInput.value = '';
+        if (modoGenerarImagen) { generarImagen(texto); return; }
+        enviarMensajeInterno(texto, texto);
+    }
+
+    sendBtn.addEventListener('click', enviarMensaje);
+    userInput.addEventListener('keydown', (evento) => { if (evento.key === 'Enter') enviarMensaje(); });
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+    }
+
+    iniciar();
+</script>
+
+</body>
+</html>

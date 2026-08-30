@@ -1,0 +1,18 @@
+{
+  "name": "CodIA - Asistente de Programación",
+  "short_name": "CodIA",
+  "description": "Asistente de programación con IA - Proyecto de grado",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#2575fc",
+  "theme_color": "#2575fc",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
