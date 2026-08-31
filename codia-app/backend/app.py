@@ -628,3 +628,7 @@ def generar_imagen(solicitud: SolicitudGenerarImagen, db: Session = Depends(get_
     db.refresh(conversacion)
 
     return RespuestaGenerarImagen(imagen_url=imagen_url, conversacion=conversacion)
+
+@app.get("/")
+def read_root():
+    return {"message": "API de CodIA funcionando correctamente"}
