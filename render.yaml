@@ -1,0 +1,29 @@
+# Blueprint de Render para el backend de CodIA.
+# Con este archivo en la raíz del repo, puedes usar "New +" -> "Blueprint"
+# en Render y que configure todo solo (carpeta, build, start command),
+# en vez de tener que llenar esos campos a mano y arriesgarte a un typo.
+#
+# Documentación: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: codia-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # OJO: Render asigna el puerto dinámicamente en la variable $PORT.
+    # Un "--port 8000" fijo aquí haría que el servicio nunca responda,
+    # porque Render espera que escuches en el puerto que él te asigna.
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEMINI_API_KEY
+        sync: false   # la pides una sola vez en el dashboard de Render; nunca queda en el repo
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_IMAGE_MODEL
+        value: gemini-2.5-flash-image
+      - key: GROQ_WHISPER_MODEL
+        value: whisper-large-v3-turbo

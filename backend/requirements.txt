@@ -1,0 +1,12 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-dotenv>=1.0
+sqlalchemy>=2.0
+requests>=2.31
+pypdf>=4.0
+python-docx>=1.1
+# Sin versión fijada: son SDKs de IA que cambian rápido y sacan
+# funciones nuevas seguido (como generación de imágenes y Whisper),
+# así que conviene dejarlos en su versión más reciente disponible.
+google-genai
+groq
