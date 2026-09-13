@@ -3,7 +3,7 @@
 // instantáneamente y se pueda instalar. El chat en sí sigue necesitando
 // internet, porque las respuestas vienen del backend + Gemini/Groq.
 
-const CACHE_NAME = 'codia-shell-v1';
+ const CACHE_NAME = 'codia-shell-v2';
 const ARCHIVOS_A_CACHEAR = [
     './',
     './index.html',

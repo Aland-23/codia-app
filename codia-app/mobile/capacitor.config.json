@@ -1,9 +1,0 @@
-{
-  "appId": "com.donbosco.codia",
-  "appName": "CodIA",
-  "webDir": "www",
-  "bundledWebRuntime": false,
-  "server": {
-    "androidScheme": "https"
-  }
-}
