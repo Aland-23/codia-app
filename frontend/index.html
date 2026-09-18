@@ -192,7 +192,7 @@
     // todo Windows) 'localhost' resuelve primero a IPv6 (::1), y si el
     // backend solo escucha en IPv4 esto causa "Failed to fetch" aunque el
     // servidor esté corriendo bien. 127.0.0.1 evita esa ambigüedad.
-    const API_URL = window.CODIA_API_URL || 'http://127.0.0.1:8000';
+    const API_URL = window.CODIA_API_URL || 'https://codia-backend.onrender.com';
 
     if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
 
