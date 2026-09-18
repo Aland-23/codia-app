@@ -43,7 +43,16 @@
     .item-conversacion .btn-borrar:hover { color: #ff6b6b; }
     .btn-cerrar-sidebar { display: none; position: absolute; top: 10px; right: -34px; width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,0.5); color: #fff; border: none; font-size: 14px; cursor: pointer; }
 
-    .main-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #0d0d0d; }
+    .main-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #0d0d0d; position: relative; }
+    .main-chat.arrastrando-archivo::after {
+        content: 'Suelta aquí la imagen o el documento';
+        position: absolute; inset: 0; z-index: 30;
+        background: rgba(138, 180, 255, 0.15);
+        border: 2px dashed #8ab4ff;
+        display: flex; align-items: center; justify-content: center;
+        color: #8ab4ff; font-size: 16px; font-weight: 700;
+        pointer-events: none;
+    }
     .chat-header { background: #0d0d0d; border-bottom: 1px solid #2e2e2e; color: #ffffff; padding: 14px 16px; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .btn-menu { display: none; background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; }
     .chat-header .titulos { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
@@ -239,19 +248,54 @@
     overlaySidebar.addEventListener('click', cerrarSidebar);
 
     // ===== Voz: lectura en voz alta (Web Speech API - SpeechSynthesis) =====
+    let vocesDisponibles = [];
+    function cargarVoces() { vocesDisponibles = speechSynthesis.getVoices(); }
+    if ('speechSynthesis' in window) {
+        cargarVoces();
+        speechSynthesis.onvoiceschanged = cargarVoces; // las voces cargan async en algunos navegadores
+    }
+
     toggleVoz.addEventListener('click', () => {
         vozActiva = !vozActiva;
         toggleVoz.classList.toggle('activo', vozActiva);
         if (!vozActiva) speechSynthesis.cancel();
     });
-    function leerEnVozAlta(texto) {
-        if (!vozActiva || !('speechSynthesis' in window)) return;
+
+    // leerManual: SIEMPRE lee, sin importar el interruptor (para el botón 🔊
+    // de cada mensaje — hacer clic ahí es una orden directa del usuario).
+    // leerEnVozAlta: solo lee si el interruptor "🔊 Voz" está activado
+    // (para la lectura automática apenas llega una respuesta nueva).
+    function leerManual(texto) {
+        if (!('speechSynthesis' in window)) {
+            alert('Tu navegador no soporta lectura en voz alta.');
+            return;
+        }
         const textoLimpio = texto.replace(/```[\s\S]*?```/g, 'código omitido.');
-        const utterance = new SpeechSynthesisUtterance(textoLimpio);
-        utterance.lang = 'es-ES';
         speechSynthesis.cancel();
-        speechSynthesis.speak(utterance);
+        // Pequeño retraso: en Chrome, llamar a speak() justo después de
+        // cancel() en el mismo instante a veces hace que el navegador
+        // descarte el mensaje en silencio (bug conocido de Chromium).
+        setTimeout(() => {
+            const utterance = new SpeechSynthesisUtterance(textoLimpio);
+            const vozEspanol = vocesDisponibles.find((v) => v.lang && v.lang.toLowerCase().startsWith('es'));
+            if (vozEspanol) {
+                utterance.voice = vozEspanol;
+                utterance.lang = vozEspanol.lang;
+            } // si no hay ninguna voz en español instalada, dejamos que use
+              // la voz por defecto del sistema en vez de forzar 'es-ES' y
+              // arriesgarnos a que se quede en silencio total.
+            utterance.onerror = (e) => console.error('Error al leer en voz alta:', e);
+            speechSynthesis.speak(utterance);
+        }, 60);
     }
+
+    function leerEnVozAlta(texto) {
+        if (!vozActiva) return;
+        leerManual(texto);
+    }
+
+    // Botón "🔊 Voz" para probar de inmediato que el audio del sistema funciona
+    toggleVoz.addEventListener('dblclick', () => leerManual('Prueba de sonido de CodIA.'));
 
     // ===== Voz: entrada por micrófono =====
     // En vez de usar el reconocimiento de voz del navegador (SpeechRecognition),
@@ -443,7 +487,7 @@
             btnLeer.className = 'btn-leer';
             btnLeer.title = 'Leer en voz alta';
             btnLeer.textContent = '🔊';
-            btnLeer.addEventListener('click', () => leerEnVozAlta(texto));
+            btnLeer.addEventListener('click', () => leerManual(texto));
             div.appendChild(btnLeer);
         }
 
@@ -473,7 +517,7 @@
             btnLeer.className = 'btn-leer';
             btnLeer.title = 'Leer en voz alta';
             btnLeer.textContent = '🔊';
-            btnLeer.addEventListener('click', () => leerEnVozAlta(textoCompleto));
+            btnLeer.addEventListener('click', () => leerManual(textoCompleto));
             div.appendChild(btnLeer);
         }
         scrollAbajo();
@@ -581,29 +625,24 @@
     }
     function quitarEscribiendo() { const t = document.getElementById('typingIndicator'); if (t) t.remove(); }
 
-    // ===== Adjuntar imagen =====
-    btnAdjuntarImagen.addEventListener('click', () => inputImagen.click());
-    inputImagen.addEventListener('change', () => {
-        const archivo = inputImagen.files[0];
-        if (!archivo) return;
+    // ===== Funciones compartidas: procesar un archivo venga de donde venga
+    // (el selector de archivos, pegar con Ctrl+V, o arrastrar y soltar) =====
+    function procesarArchivoImagen(archivo) {
         documentoPendiente = null;
         const lector = new FileReader();
         lector.onload = () => {
             const base64 = lector.result.split(',')[1];
-            imagenPendiente = { base64, mime: archivo.type, nombre: archivo.name };
+            imagenPendiente = { base64, mime: archivo.type, nombre: archivo.name || 'imagen-pegada.png' };
             previewAdjuntoThumb.src = lector.result;
             previewAdjuntoThumb.style.display = 'block';
-            previewAdjuntoNombre.textContent = archivo.name;
+            previewAdjuntoNombre.textContent = archivo.name || 'Imagen pegada';
             previewAdjunto.style.display = 'flex';
+            userInput.focus();
         };
         lector.readAsDataURL(archivo);
-    });
+    }
 
-    // ===== Adjuntar documento (PDF / Word) =====
-    btnAdjuntarDocumento.addEventListener('click', () => inputDocumento.click());
-    inputDocumento.addEventListener('change', () => {
-        const archivo = inputDocumento.files[0];
-        if (!archivo) return;
+    function procesarArchivoDocumento(archivo) {
         imagenPendiente = null;
         const lector = new FileReader();
         lector.onload = () => {
@@ -612,8 +651,70 @@
             previewAdjuntoThumb.style.display = 'none';
             previewAdjuntoNombre.textContent = '📄 ' + archivo.name;
             previewAdjunto.style.display = 'flex';
+            userInput.focus();
         };
         lector.readAsDataURL(archivo);
+    }
+
+    function esDocumentoValido(archivo) {
+        const nombre = (archivo.name || '').toLowerCase();
+        return nombre.endsWith('.pdf') || nombre.endsWith('.docx');
+    }
+
+    // ===== Adjuntar imagen =====
+    btnAdjuntarImagen.addEventListener('click', () => inputImagen.click());
+    inputImagen.addEventListener('change', () => {
+        const archivo = inputImagen.files[0];
+        if (archivo) procesarArchivoImagen(archivo);
+    });
+
+    // ===== Adjuntar documento (PDF / Word) =====
+    btnAdjuntarDocumento.addEventListener('click', () => inputDocumento.click());
+    inputDocumento.addEventListener('change', () => {
+        const archivo = inputDocumento.files[0];
+        if (archivo) procesarArchivoDocumento(archivo);
+    });
+
+    // ===== Pegar imágenes con Ctrl+V directo en el campo de texto =====
+    userInput.addEventListener('paste', (evento) => {
+        const items = evento.clipboardData && evento.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type && item.type.startsWith('image/')) {
+                evento.preventDefault();
+                const archivo = item.getAsFile();
+                if (archivo) procesarArchivoImagen(archivo);
+                break;
+            }
+        }
+    });
+
+    // ===== Arrastrar y soltar imágenes o documentos sobre el chat =====
+    const zonaArrastre = document.querySelector('.main-chat');
+    ['dragenter', 'dragover'].forEach((evt) => {
+        zonaArrastre.addEventListener(evt, (e) => {
+            e.preventDefault();
+            zonaArrastre.classList.add('arrastrando-archivo');
+        });
+    });
+    ['dragleave', 'dragend'].forEach((evt) => {
+        zonaArrastre.addEventListener(evt, (e) => {
+            e.preventDefault();
+            zonaArrastre.classList.remove('arrastrando-archivo');
+        });
+    });
+    zonaArrastre.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zonaArrastre.classList.remove('arrastrando-archivo');
+        const archivo = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!archivo) return;
+        if (archivo.type && archivo.type.startsWith('image/')) {
+            procesarArchivoImagen(archivo);
+        } else if (esDocumentoValido(archivo)) {
+            procesarArchivoDocumento(archivo);
+        } else {
+            alert('Solo se pueden arrastrar imágenes o archivos .pdf / .docx');
+        }
     });
 
     btnQuitarAdjunto.addEventListener('click', () => {
