@@ -53,6 +53,11 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 # Nombre del modelo de Whisper (transcripción de voz) que ofrece Groq.
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+# Nombre del modelo de chat de Groq. Groq retira/renombra modelos con cierta
+# frecuencia; si este deja de funcionar, revisa la lista vigente en
+# https://console.groq.com/docs/models y actualízalo aquí o en la variable
+# de entorno GROQ_CHAT_MODEL, sin tocar el resto del código.
+GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
@@ -283,7 +288,7 @@ def generar_respuesta_ia(
             mensajes_groq.append({"role": "user", "content": texto_usuario})
 
             respuesta_groq = _cliente_groq.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=GROQ_CHAT_MODEL,
                 messages=mensajes_groq,
                 temperature=0.7,
             )
@@ -369,7 +374,7 @@ def generar_respuesta_ia_stream(
             mensajes_groq.append({"role": "user", "content": texto_usuario})
 
             flujo = _cliente_groq.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=GROQ_CHAT_MODEL,
                 messages=mensajes_groq,
                 temperature=0.7,
                 stream=True,
