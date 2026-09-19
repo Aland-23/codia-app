@@ -54,10 +54,10 @@ GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 # Nombre del modelo de Whisper (transcripción de voz) que ofrece Groq.
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 # Nombre del modelo de chat de Groq. Groq retira/renombra modelos con cierta
-# frecuencia; si este deja de funcionar, revisa la lista vigente en
-# https://console.groq.com/docs/models y actualízalo aquí o en la variable
-# de entorno GROQ_CHAT_MODEL, sin tocar el resto del código.
-GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
+# frecuencia (retiraron llama-3.1-8b-instant y llama-3.3-70b-versatile en
+# junio de 2026); si este deja de funcionar, revisa la lista vigente en
+# https://console.groq.com/docs/models o https://console.groq.com/docs/deprecations
+GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "openai/gpt-oss-20b")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
