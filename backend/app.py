@@ -264,6 +264,7 @@ def generar_respuesta_ia(
             )
             return respuesta.text, "gemini"
         except Exception as error_gemini:
+            print(f"[CodIA] Error de Gemini: {error_gemini}")
             ultimo_error = error_gemini  # seguimos al plan B
 
     if GROQ_DISPONIBLE:
@@ -288,6 +289,7 @@ def generar_respuesta_ia(
             )
             return respuesta_groq.choices[0].message.content, "groq"
         except Exception as error_groq:
+            print(f"[CodIA] Error de Groq: {error_groq}")
             raise HTTPException(status_code=502, detail=traducir_error_ia(error_groq))
 
     if ultimo_error is not None:
@@ -345,6 +347,7 @@ def generar_respuesta_ia_stream(
             if algo_enviado:
                 return
         except Exception as error_gemini:
+            print(f"[CodIA] Error de Gemini (stream): {error_gemini}")
             if algo_enviado:
                 yield "\n\n⚠️ La conexión con la IA se interrumpió a mitad de la respuesta.", "gemini"
                 return
@@ -377,6 +380,7 @@ def generar_respuesta_ia_stream(
                     yield delta, "groq"
             return
         except Exception as error_groq:
+            print(f"[CodIA] Error de Groq (stream): {error_groq}")
             yield traducir_error_ia(error_groq), "error"
             return
 
@@ -807,6 +811,27 @@ def generar_imagen(solicitud: SolicitudGenerarImagen, db: Session = Depends(get_
     db.refresh(conversacion)
 
     return RespuestaGenerarImagen(imagen_url=imagen_url, conversacion=conversacion)
+
+
+def transcribir_audio_ia(datos_audio: bytes, nombre_archivo: str) -> str:
+    """Transcribe un audio a texto usando Whisper vía Groq. Se usa para la
+    entrada de voz: funciona en cualquier navegador (Brave, Firefox, Safari,
+    Chrome) porque solo graba el audio en el navegador y lo manda al
+    backend — no depende del servicio de voz de Google."""
+    if not GROQ_DISPONIBLE:
+        raise HTTPException(
+            status_code=503,
+            detail="La transcripción de voz necesita Groq configurado en el backend.",
+        )
+    try:
+        resultado = _cliente_groq.audio.transcriptions.create(
+            file=(nombre_archivo, datos_audio),
+            model=GROQ_WHISPER_MODEL,
+            language="es",
+        )
+        return resultado.text
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=traducir_error_ia(e))
 
 
 class SolicitudTranscribir(BaseModel):
