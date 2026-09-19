@@ -64,12 +64,22 @@ UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 # =========================================================
-# 1) BASE DE DATOS (SQLite por simplicidad; el mismo código de
-#    SQLAlchemy funciona con Postgres/MySQL solo cambiando DATABASE_URL,
-#    algo recomendable si despliegas en un host con disco no persistente).
+# 1) BASE DE DATOS
+#    Usa Postgres si la variable de entorno DATABASE_URL está puesta
+#    (así queda persistente de verdad en Render, a diferencia de SQLite en
+#    disco, que se borra en cada redeploy del plan gratuito). Si no está
+#    puesta (por ejemplo, corriendo en tu compu), cae a un archivo SQLite
+#    local — el mismo código de SQLAlchemy funciona igual con ambas.
 # =========================================================
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'codia.db')}"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{os.path.join(BASE_DIR, 'codia.db')}"
+
+# Render entrega la URL de Postgres con el prefijo "postgres://", pero
+# SQLAlchemy 2.x exige "postgresql://" — lo corregimos automáticamente.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+_argumentos_conexion = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=_argumentos_conexion)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 

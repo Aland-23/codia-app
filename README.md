@@ -171,15 +171,24 @@ fuera de `localhost`):
      - **Environment → Add Environment Variable:** `GEMINI_API_KEY` y
        `GROQ_API_KEY` con tus claves (nunca las subas en `.env` al repo —
        tu `.gitignore` ya lo excluye).
-   - **⚠️ Disco efímero en el plan gratuito:** Render *free tier* no
-     conserva archivos entre reinicios/redeploys. Eso significa que
-     `backend/codia.db` (tus conversaciones) y `backend/uploads/`
-     (imágenes/documentos subidos) **se borran cada vez que Render
-     reinicia el servicio** (duerme tras 15 min sin uso, o si haces un
-     nuevo deploy). Para desarrollo/demo está bien; para producción real,
-     lo siguiente sería migrar a una base de datos externa persistente
-     (ej. el Postgres gratuito de Render) — solo cambiarías `DATABASE_URL`
-     en `app.py`, no la lógica.
+   - **Base de datos (ya viene resuelta en el `render.yaml`):** el Blueprint
+     crea también una base de datos Postgres gratuita (`codia-db`) y la
+     conecta sola al backend mediante la variable `DATABASE_URL` — ya no
+     depende del disco del servicio, así que las conversaciones sobreviven
+     a los redeploys y a que el servicio se duerma. Si desplegaste
+     manualmente en vez de con Blueprint, crea tú mismo una base "PostgreSQL"
+     en Render y pega su "Internal Database URL" como variable de entorno
+     `DATABASE_URL` en el web service.
+     ⚠️ El Postgres gratuito de Render **expira a los 30 días** si no lo
+     conviertes a un plan pago — para un proyecto de grado de corto plazo
+     está perfecto, pero si necesitas que dure más, revisa la fecha de
+     expiración en el dashboard de esa base de datos.
+   - **Uploads (imágenes/documentos) siguen sin ser persistentes:**
+     `backend/uploads/` vive en el disco del servicio, no en la base de
+     datos, así que las imágenes generadas o subidas sí se siguen borrando
+     en cada redeploy/reinicio. Si esto te importa, el siguiente paso sería
+     subirlas a un storage externo (ej. Cloudinary o un bucket S3 gratuito)
+     en vez de a disco local.
 2. **Frontend:** despliega la carpeta `frontend/` en Vercel, Netlify o
    GitHub Pages (cualquiera te da HTTPS gratis, necesario para que la PWA
    sea instalable).

@@ -5,6 +5,12 @@
 #
 # Documentación: https://render.com/docs/blueprint-spec
 
+databases:
+  - name: codia-db
+    plan: free
+    databaseName: codia
+    user: codia
+
 services:
   - type: web
     name: codia-backend
@@ -27,3 +33,9 @@ services:
         value: gemini-2.5-flash-image
       - key: GROQ_WHISPER_MODEL
         value: whisper-large-v3-turbo
+      - key: GROQ_CHAT_MODEL
+        value: openai/gpt-oss-20b
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codia-db
+          property: connectionString
