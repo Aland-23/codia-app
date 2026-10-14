@@ -1,0 +1,4 @@
+# El frontend vive en la carpeta frontend/, no en la raíz del repo.
+# Sin esto, Netlify publica la raíz (donde no hay index.html) y da 404.
+[build]
+  publish = "frontend"
