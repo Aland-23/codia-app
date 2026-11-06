@@ -161,15 +161,15 @@ fuera de `localhost`):
      Render, "New +" → "Blueprint" → conecta tu repo de GitHub. Render lee
      el archivo `render.yaml` de la raíz del proyecto y configura solo la
      carpeta (`backend/`), el build y el comando de arranque. Solo te va a
-     pedir que pegues `GEMINI_API_KEY` y `GROQ_API_KEY` la primera vez.
+     pedir que pegues `GEMINI_API_KEYS` y `GROQ_API_KEYS` (una o varias claves separadas por comas) la primera vez.
    - **Manual:** "New +" → "Web Service" → conecta el repo → configura a mano:
      - **Root Directory:** `backend`
      - **Build Command:** `pip install -r requirements.txt`
      - **Start Command:** `uvicorn app:app --host 0.0.0.0 --port $PORT`
        (⚠️ usa `$PORT`, no `8000` — Render asigna el puerto dinámicamente;
        con un puerto fijo el servicio nunca llega a responder)
-     - **Environment → Add Environment Variable:** `GEMINI_API_KEY` y
-       `GROQ_API_KEY` con tus claves (nunca las subas en `.env` al repo —
+     - **Environment → Add Environment Variable:** `GEMINI_API_KEYS` y
+       `GROQ_API_KEYS` con tus claves separadas por comas (nunca las subas en `.env` al repo —
        tu `.gitignore` ya lo excluye).
    - **Base de datos (ya viene resuelta en el `render.yaml`):** el Blueprint
      crea también una base de datos Postgres gratuita (`codia-db`) y la
@@ -289,3 +289,26 @@ una página sencilla (una más para desplegar junto al frontend).
 3. **Rate limiting / control de costos** en el backend, para que la API de
    Gemini/Groq (generación de imágenes incluida) no se pueda saturar si el
    proyecto se comparte públicamente (por ejemplo con `slowapi`).
+
+---
+
+## Varias claves de API (evitar saturación)
+
+Los planes gratuitos de Gemini y Groq limitan las peticiones **por clave**. CodIA acepta
+varias claves por proveedor (`backend/claves.py`):
+
+```env
+GEMINI_API_KEYS=clave1,clave2,clave3
+GROQ_API_KEYS=claveA,claveB
+```
+
+- **Reparto:** cada petición empieza por la siguiente clave (round-robin).
+- **Failover:** si una clave responde 429 / cuota agotada, entra en pausa unos minutos y la
+  misma petición se reintenta con otra, sin que el usuario lo note (en streaming, solo si el
+  error ocurre antes de la primera letra).
+- **Claves inválidas** se apartan 6 horas. Si todas las de Gemini fallan, se usa Groq.
+- Funcionan también `GEMINI_API_KEY`, `GEMINI_API_KEY_2` … `_20` (igual para `GROQ_`).
+- Para que sirva de verdad, crea las claves en **cuentas/proyectos de Google distintos**:
+  varias claves del mismo proyecto comparten la misma cuota.
+- `GET /api/estado` muestra cuántas claves hay y cuántas están en pausa.
+- Pruebas: `cd backend && python -m unittest discover tests -v`

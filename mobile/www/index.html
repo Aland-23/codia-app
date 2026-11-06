@@ -14,113 +14,241 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 
 <style>
-    /* Paleta tomada del prototipo original (chatbox_streamlit.py):
-       fondo casi negro #0d0d0d, sidebar #0a0a0a, texto blanco puro,
-       bordes sutiles #5a5a5a / #2e2e2e, acento azul #8ab4ff. */
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+    /* Paleta del prototipo original: fondo casi negro #0d0d0d, sidebar #0a0a0a,
+       bordes sutiles y acento azul #8ab4ff. Esta versión añade un sistema de
+       movimiento común (curvas y duraciones) para que todo se sienta fluido. */
+    :root {
+        --fondo: #0d0d0d;
+        --panel: #161616;
+        --borde: #2e2e2e;
+        --acento: #8ab4ff;
+        --texto: #ececec;
+        /* curvas: "salida suave" para entradas, "resorte" para pulsaciones */
+        --suave: cubic-bezier(0.22, 1, 0.36, 1);
+        --resorte: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; overscroll-behavior: none; }
     body { display: flex; justify-content: center; align-items: center; background: #000000; }
+    button { font-family: inherit; }
 
     .app-shell {
-        width: 100%; max-width: 900px; height: 100vh; max-height: 800px;
-        background: #0d0d0d; border-radius: 16px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-        display: flex; overflow: hidden; position: relative; border: 1px solid #2e2e2e;
+        width: 100%; max-width: 900px; height: 100vh; height: 100dvh; max-height: 800px;
+        background: var(--fondo); border-radius: 16px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        display: flex; overflow: hidden; position: relative; border: 1px solid var(--borde);
+        animation: shellEntra 0.6s var(--suave) both;
     }
+    @keyframes shellEntra { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
 
-    .sidebar { width: 240px; flex-shrink: 0; background: #0a0a0a; color: #fff; display: flex; flex-direction: column; transition: transform 0.25s ease; z-index: 20; border-right: 1px solid #2e2e2e; }
+    /* ---------- Sidebar ---------- */
+    .sidebar { width: 240px; flex-shrink: 0; background: #0a0a0a; color: #fff; display: flex; flex-direction: column; transition: transform 0.38s var(--suave); z-index: 20; border-right: 1px solid var(--borde); }
     .sidebar-header { padding: 14px; display: flex; align-items: center; gap: 8px; }
-    .sidebar-header .logo { width: 26px; height: 26px; flex-shrink: 0; }
+    .sidebar-header .logo { width: 26px; height: 26px; flex-shrink: 0; transition: transform 0.6s var(--resorte); }
+    .sidebar-header:hover .logo { transform: rotate(-12deg) scale(1.1); }
     .sidebar-header span { font-weight: 700; font-size: 15px; }
-    .btn-nuevo-chat { margin: 0 12px 12px; padding: 10px; background: transparent; border: 1px solid #5a5a5a; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; }
-    .btn-nuevo-chat:hover { background: #1f1f1f; border-color: #8ab4ff; }
+    .btn-nuevo-chat { margin: 0 12px 12px; padding: 10px; background: transparent; border: 1px solid #5a5a5a; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; transition: background 0.2s, border-color 0.2s, transform 0.2s var(--resorte); }
+    .btn-nuevo-chat:hover { background: #1f1f1f; border-color: var(--acento); }
+    .btn-nuevo-chat:active { transform: scale(0.97); }
     .etiqueta-seccion { color: #b5b5b5; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin: 18px 16px 6px; }
     .lista-conversaciones { flex: 1; overflow-y: auto; padding: 0 8px; }
-    .item-conversacion { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 10px; border-radius: 8px; margin-bottom: 2px; font-size: 13px; color: #e5e5e5; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .item-conversacion:hover { background: #1f1f1f; }
+    .item-conversacion { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 10px; border-radius: 8px; margin-bottom: 2px; font-size: 13px; color: #e5e5e5; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 0.2s, transform 0.2s var(--suave); }
+    .item-conversacion.nuevo { animation: itemEntra 0.45s var(--suave) both; animation-delay: calc(var(--i, 0) * 35ms); }
+    @keyframes itemEntra { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+    .item-conversacion:hover { background: #1b1b1b; transform: translateX(2px); }
     .item-conversacion.activa { background: #262626; color: #fff; }
-    .item-conversacion .titulo-conv { overflow: hidden; text-overflow: ellipsis; }
-    .item-conversacion .btn-borrar { background: none; border: none; color: #8a8a8a; cursor: pointer; font-size: 13px; flex-shrink: 0; padding: 2px 4px; }
-    .item-conversacion .btn-borrar:hover { color: #ff6b6b; }
+    .item-conversacion.activa::before { content: ''; position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px; border-radius: 3px; background: var(--acento); animation: barraActiva 0.35s var(--suave); }
+    @keyframes barraActiva { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    .item-conversacion .titulo-conv { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+    .item-conversacion .btn-borrar { background: none; border: none; color: #8a8a8a; cursor: pointer; font-size: 13px; flex-shrink: 0; padding: 2px 4px; opacity: 0; transition: opacity 0.2s, color 0.2s, transform 0.2s var(--resorte); }
+    .item-conversacion:hover .btn-borrar, .item-conversacion.activa .btn-borrar { opacity: 1; }
+    .item-conversacion .btn-borrar:hover { color: #ff6b6b; transform: scale(1.2); }
+    .item-conversacion.saliendo { opacity: 0; transform: translateX(-16px); height: 0; padding-top: 0; padding-bottom: 0; margin: 0; transition: all 0.3s var(--suave); }
     .btn-cerrar-sidebar { display: none; position: absolute; top: 10px; right: -34px; width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,0.5); color: #fff; border: none; font-size: 14px; cursor: pointer; }
 
-    .main-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #0d0d0d; }
-    .chat-header { background: #0d0d0d; border-bottom: 1px solid #2e2e2e; color: #ffffff; padding: 14px 16px; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    /* ---------- Chat ---------- */
+    .main-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--fondo); position: relative; }
+    .main-chat.arrastrando-archivo::after {
+        content: 'Suelta aquí la imagen o el documento';
+        position: absolute; inset: 0; z-index: 30;
+        background: rgba(138, 180, 255, 0.15);
+        border: 2px dashed var(--acento);
+        display: flex; align-items: center; justify-content: center;
+        color: var(--acento); font-size: 16px; font-weight: 700;
+        pointer-events: none; animation: fadeSimple 0.2s ease;
+    }
+    @keyframes fadeSimple { from { opacity: 0; } to { opacity: 1; } }
+    .chat-header { background: var(--fondo); border-bottom: 1px solid var(--borde); color: #ffffff; padding: 14px 16px; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .btn-menu { display: none; background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; }
     .chat-header .titulos { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
     .chat-header .subtitulo { font-size: 11px; font-weight: 400; opacity: 0.7; }
-    .toggle-voz { margin-left: auto; background: #1f1f1f; border: 1px solid #5a5a5a; color: #fff; border-radius: 14px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
-    .toggle-voz.activo { background: #8ab4ff; color: #0d0d0d; font-weight: 700; border-color: #8ab4ff; }
-    .estado-conexion { font-size: 10px; padding: 4px 12px; text-align: center; flex-shrink: 0; }
+    .toggle-voz { margin-left: auto; background: #1f1f1f; border: 1px solid #5a5a5a; color: #fff; border-radius: 14px; padding: 5px 10px; font-size: 11px; cursor: pointer; transition: background 0.25s, color 0.25s, border-color 0.25s, transform 0.2s var(--resorte); }
+    .toggle-voz:active { transform: scale(0.94); }
+    .toggle-voz.activo { background: var(--acento); color: #0d0d0d; font-weight: 700; border-color: var(--acento); }
+    .estado-conexion { font-size: 10px; padding: 4px 12px; text-align: center; flex-shrink: 0; transition: background 0.4s, color 0.4s; }
     .estado-conexion.ok { background: #103a1c; color: #6fe08a; }
     .estado-conexion.aviso { background: #3a2f10; color: #f0c96a; }
-    .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #0d0d0d; }
 
-    .message { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14.5px; line-height: 1.5; animation: fadeIn 0.3s ease-in-out; word-wrap: break-word; }
-    .message.user { align-self: flex-end; background: #1f1f1f; color: #ffffff; border: 1px solid #3a3a3a; border-bottom-right-radius: 4px; }
-    .message.ia { align-self: flex-start; background: transparent; color: #ffffff; border-bottom-left-radius: 4px; padding-left: 0; padding-right: 0; }
-    .message.error { align-self: flex-start; background: #3a1414; color: #ff9b9b; border: 1px solid #5a2a2a; border-bottom-left-radius: 4px; }
-    .message p { margin: 0 0 6px; white-space: pre-wrap; }
+    .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: var(--fondo); scroll-behavior: auto; }
+    .chat-messages.cambio { animation: cambioChat 0.4s var(--suave); }
+    @keyframes cambioChat { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .chat-messages::-webkit-scrollbar, .lista-conversaciones::-webkit-scrollbar { width: 8px; }
+    .chat-messages::-webkit-scrollbar-thumb, .lista-conversaciones::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 8px; }
+    .chat-messages::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+    /* ---------- Mensajes ---------- */
+    .message { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.6; word-wrap: break-word; overflow-wrap: anywhere; }
+    .message.anima { animation: entraIA 0.45s var(--suave) both; }
+    .message.user.anima { animation-name: entraUsuario; }
+    @keyframes entraUsuario { from { opacity: 0; transform: translateY(12px) scale(0.94); } to { opacity: 1; transform: none; } }
+    @keyframes entraIA { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } to { opacity: 1; transform: none; filter: blur(0); } }
+    .message.user { align-self: flex-end; transform-origin: bottom right; background: linear-gradient(135deg, #232a38, #1b212d); color: #ffffff; border: 1px solid #323c50; border-bottom-right-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.25); }
+    .message.ia { align-self: flex-start; background: transparent; color: var(--texto); border-bottom-left-radius: 5px; padding-left: 0; padding-right: 0; font-size: 15px; line-height: 1.65; max-width: 92%; }
+    .message.error { align-self: flex-start; background: #3a1414; color: #ff9b9b; border: 1px solid #5a2a2a; border-bottom-left-radius: 5px; animation: sacudir 0.4s ease; }
+    @keyframes sacudir { 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+    .message p { margin: 0 0 8px; white-space: pre-wrap; }
     .message p:last-child { margin-bottom: 0; }
-    .message img.adjunta { max-width: 100%; border-radius: 8px; margin-top: 6px; display: block; }
+    .message code.inline { font-family: Consolas, 'Courier New', monospace; font-size: 0.88em; background: #1d1d1d; border: 1px solid #2e2e2e; border-radius: 5px; padding: 1px 5px; color: #cfe0ff; }
+    .message strong { color: #fff; font-weight: 700; }
     .chip-documento { display: inline-flex; align-items: center; gap: 4px; background: #1f1f1f; border: 1px solid #3a3a3a; border-radius: 8px; padding: 4px 8px; font-size: 12px; margin-top: 4px; color: #ddd; }
-    .btn-leer { background: none; border: none; cursor: pointer; font-size: 13px; margin-left: 6px; opacity: 0.6; }
-    .btn-leer:hover { opacity: 1; }
+    .message.ia p:has(+ .btn-leer) { margin-bottom: 0; }
+    .btn-leer { display: block; line-height: 1; padding: 4px 2px 0; background: none; border: none; cursor: pointer; font-size: 13px; opacity: 0; transition: opacity 0.25s, transform 0.2s var(--resorte); }
+    .message.ia:hover .btn-leer, .btn-leer:focus-visible { opacity: 0.7; }
+    .btn-leer:hover { opacity: 1 !important; transform: scale(1.2); }
+    @media (hover: none) { .btn-leer { opacity: 0.55; } }
 
-    .bloque-codigo { margin: 8px 0; border-radius: 10px; overflow: hidden; background: #161616; border: 1px solid #2e2e2e; }
+    /* Cursor suave al final del texto mientras CodIA escribe */
+    .cursor-escritura { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; border-radius: 2px; background: var(--acento); box-shadow: 0 0 10px rgba(138,180,255,0.7); animation: pulsoCursor 1s ease-in-out infinite; }
+    @keyframes pulsoCursor { 0%, 100% { opacity: 1; transform: scaleY(1); } 50% { opacity: 0.25; transform: scaleY(0.82); } }
+    .bloque-nuevo { animation: bloqueEntra 0.4s var(--suave) both; }
+    @keyframes bloqueEntra { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+    /* ---------- Imágenes ---------- */
+    .imagen-wrap { position: relative; margin-top: 8px; border-radius: 16px; overflow: hidden; background: #141414; border: 1px solid #2a2a2a; box-shadow: 0 8px 28px rgba(0,0,0,0.45); max-width: min(100%, 420px); cursor: zoom-in; transition: transform 0.35s var(--suave), box-shadow 0.35s var(--suave), border-color 0.3s; }
+    .imagen-wrap:hover { transform: translateY(-2px) scale(1.012); box-shadow: 0 14px 38px rgba(0,0,0,0.6); border-color: #3c4a66; }
+    .imagen-wrap.cargando { aspect-ratio: 1 / 1; width: min(100%, 320px); }
+    .imagen-wrap .shimmer { position: absolute; inset: 0; background: linear-gradient(100deg, #151515 30%, #242b3a 50%, #151515 70%); background-size: 250% 100%; animation: shimmer 1.4s linear infinite; transition: opacity 0.5s; }
+    .imagen-wrap.lista .shimmer { opacity: 0; pointer-events: none; }
+    @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+    .imagen-wrap img { display: block; width: 100%; height: auto; opacity: 0; filter: blur(18px); transform: scale(1.06); transition: opacity 0.7s ease, filter 0.9s var(--suave), transform 0.9s var(--suave); }
+    .imagen-wrap.lista img { opacity: 1; filter: blur(0); transform: scale(1); }
+    .imagen-wrap.fallo { aspect-ratio: auto; padding: 18px; color: #ff9b9b; font-size: 12px; cursor: default; }
+    .imagen-wrap .pie-imagen { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 12px 8px; font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.65)); opacity: 0; transform: translateY(6px); transition: opacity 0.3s, transform 0.3s var(--suave); pointer-events: none; }
+    .imagen-wrap:hover .pie-imagen { opacity: 1; transform: none; }
+
+    /* Tarjeta mientras se genera una imagen */
+    .generando-imagen { position: relative; width: min(100%, 320px); aspect-ratio: 1 / 1; margin-top: 4px; border-radius: 16px; overflow: hidden; border: 1px solid #2a3350; background: #11141c; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: #b9c8ee; font-size: 13px; }
+    .generando-imagen::before { content: ''; position: absolute; inset: -40%; background: conic-gradient(from 0deg, transparent 0 55%, rgba(138,180,255,0.28) 75%, transparent 95%); animation: girar 3.2s linear infinite; }
+    .generando-imagen::after { content: ''; position: absolute; inset: 1px; border-radius: 15px; background: radial-gradient(circle at 50% 40%, #182036, #0e1119 70%); }
+    .generando-imagen > * { position: relative; z-index: 1; }
+    .generando-imagen .chispa { font-size: 30px; animation: flotar 2.2s ease-in-out infinite; filter: drop-shadow(0 0 12px rgba(138,180,255,0.6)); }
+    .generando-imagen .texto-gen { animation: respirar 1.8s ease-in-out infinite; }
+    @keyframes girar { to { transform: rotate(360deg); } }
+    @keyframes flotar { 0%, 100% { transform: translateY(2px) scale(1); } 50% { transform: translateY(-6px) scale(1.12); } }
+    @keyframes respirar { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+    /* Visor a pantalla completa */
+    .visor { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: rgba(0,0,0,0); backdrop-filter: blur(0); opacity: 0; transition: opacity 0.3s ease, background 0.3s ease, backdrop-filter 0.3s ease; }
+    .visor.abierto { opacity: 1; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); }
+    .visor img { max-width: 92vw; max-height: 80vh; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.7); transform: scale(0.88); opacity: 0; transition: transform 0.45s var(--suave), opacity 0.35s ease; }
+    .visor.abierto img { transform: scale(1); opacity: 1; }
+    .visor .acciones-visor { display: flex; gap: 10px; opacity: 0; transform: translateY(8px); transition: opacity 0.35s 0.1s, transform 0.4s 0.1s var(--suave); }
+    .visor.abierto .acciones-visor { opacity: 1; transform: none; }
+    .visor a, .visor button { background: #1f1f1f; color: #fff; border: 1px solid #5a5a5a; border-radius: 20px; padding: 8px 16px; font-size: 13px; text-decoration: none; cursor: pointer; transition: background 0.2s, transform 0.2s var(--resorte); }
+    .visor a:hover, .visor button:hover { background: #2c2c2c; transform: translateY(-1px); }
+
+    /* ---------- Código y diagramas ---------- */
+    .bloque-codigo { margin: 10px 0; border-radius: 12px; overflow: hidden; background: #131313; border: 1px solid var(--borde); transition: border-color 0.3s, box-shadow 0.3s; }
+    .bloque-codigo.abierto { border-color: #34456a; box-shadow: 0 0 0 1px rgba(138,180,255,0.08), 0 0 24px rgba(138,180,255,0.06); }
     .bloque-codigo-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #0a0a0a; font-size: 11px; color: #9aa0b4; }
+    .bloque-codigo-header .etiqueta-lenguaje { display: inline-flex; align-items: center; gap: 6px; }
+    .bloque-codigo.abierto .etiqueta-lenguaje::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--acento); animation: parpadeo 1s infinite; }
     .bloque-codigo-header .acciones { display: flex; gap: 8px; }
-    .bloque-codigo-header button { background: none; border: 1px solid #5a5a5a; color: #d6d8e2; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
-    .bloque-codigo-header button:hover { background: #262626; }
+    .bloque-codigo-header button { background: none; border: 1px solid #5a5a5a; color: #d6d8e2; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; transition: background 0.2s, transform 0.2s var(--resorte), opacity 0.2s; }
+    .bloque-codigo-header button:hover:not(:disabled) { background: #262626; }
+    .bloque-codigo-header button:active:not(:disabled) { transform: scale(0.93); }
     .bloque-codigo-header button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .bloque-codigo pre { margin: 0; padding: 10px; overflow-x: auto; font-size: 12.5px; color: #e6e6f0; font-family: Consolas, 'Courier New', monospace; }
-    .salida-codigo { padding: 8px 10px; font-size: 12px; font-family: Consolas, monospace; white-space: pre-wrap; border-top: 1px solid #2e2e2e; }
+    .bloque-codigo pre { margin: 0; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; color: #e6e6f0; font-family: Consolas, 'Courier New', monospace; }
+    .salida-codigo { padding: 8px 10px; font-size: 12px; font-family: Consolas, monospace; white-space: pre-wrap; border-top: 1px solid var(--borde); animation: bloqueEntra 0.35s var(--suave); }
     .salida-codigo.ok { color: #8fe3a3; }
     .salida-codigo.err { color: #ff9b9b; }
-    .btn-corregir { margin: 6px 10px 10px; background: #ff9b9b; border: none; color: #1e1e2e; font-weight: 700; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+    .btn-corregir { margin: 6px 10px 10px; background: #ff9b9b; border: none; color: #1e1e2e; font-weight: 700; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; transition: background 0.2s, transform 0.2s var(--resorte); }
     .btn-corregir:hover { background: #ffb3b3; }
+    .btn-corregir:active { transform: scale(0.95); }
     .btn-corregir:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .bloque-diagrama { margin: 8px 0; padding: 10px; background: #f5f5f5; border: 1px solid #2e2e2e; border-radius: 10px; overflow-x: auto; }
-    .bloque-diagrama svg { max-width: 100%; }
-    .bloque-diagrama.error-diagrama { font-size: 12px; color: #ff9b9b; font-family: Consolas, monospace; background: transparent; }
+    .bloque-diagrama { margin: 10px 0; padding: 12px; color: #2b2b2b; background: #f5f5f5; border: 1px solid var(--borde); border-radius: 12px; overflow-x: auto; }
+    .bloque-diagrama svg { max-width: 100%; height: auto; animation: fadeSimple 0.6s ease; }
+    .bloque-diagrama.dibujando { background: linear-gradient(100deg, #161616 30%, #232a3a 50%, #161616 70%); background-size: 250% 100%; animation: shimmer 1.4s linear infinite; color: #9fb0d8; font-size: 12px; min-height: 64px; display: flex; align-items: center; justify-content: center; }
+    .bloque-diagrama.error-diagrama { font-size: 12px; color: #ff9b9b; font-family: Consolas, monospace; background: transparent; white-space: pre-wrap; }
 
-    .typing { align-self: flex-start; font-size: 13px; color: #b5b5b5; font-style: italic; padding-left: 4px; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    /* ---------- Indicador "escribiendo": tres puntos que rebotan ---------- */
+    .typing { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; padding: 8px 2px; animation: entraIA 0.35s var(--suave) both; }
+    .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--acento); opacity: 0.4; animation: rebote 1.2s ease-in-out infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .typing span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes rebote { 0%, 60%, 100% { transform: translateY(0); opacity: 0.35; } 30% { transform: translateY(-6px); opacity: 1; } }
 
-    .preview-adjunto { display: none; align-items: center; gap: 8px; padding: 8px 12px; background: #161616; border-top: 1px solid #2e2e2e; flex-shrink: 0; }
-    .preview-adjunto img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+    /* Botón flotante para volver al final */
+    .btn-bajar { position: absolute; right: 18px; bottom: 86px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid #3a4666; background: rgba(26,32,48,0.92); color: #cfe0ff; font-size: 16px; cursor: pointer; z-index: 10; box-shadow: 0 6px 20px rgba(0,0,0,0.5); opacity: 0; transform: translateY(10px) scale(0.8); pointer-events: none; transition: opacity 0.25s, transform 0.35s var(--resorte); }
+    .btn-bajar.visible { opacity: 1; transform: none; pointer-events: auto; }
+    .btn-bajar:hover { background: #26304a; }
+
+    /* ---------- Barras auxiliares ---------- */
+    .preview-adjunto { display: none; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); border-top: 1px solid var(--borde); flex-shrink: 0; }
+    .preview-adjunto.visible { animation: subeBarra 0.3s var(--suave); }
+    @keyframes subeBarra { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .preview-adjunto img { width: 40px; height: 40px; object-fit: cover; border-radius: 8px; }
     .preview-adjunto span { font-size: 12px; color: #ccc; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .preview-adjunto button { background: none; border: none; font-size: 16px; cursor: pointer; color: #ff9b9b; }
+    .preview-adjunto button { background: none; border: none; font-size: 16px; cursor: pointer; color: #ff9b9b; transition: transform 0.2s var(--resorte); }
+    .preview-adjunto button:hover { transform: scale(1.25) rotate(8deg); }
 
-    .barra-modo { display: none; align-items: center; gap: 8px; padding: 6px 12px; background: #1a1430; border-top: 1px solid #2e2e2e; font-size: 12px; color: #c3b3ff; flex-shrink: 0; }
+    .barra-modo { display: none; align-items: center; gap: 8px; padding: 6px 12px; background: #1a1430; border-top: 1px solid var(--borde); font-size: 12px; color: #c3b3ff; flex-shrink: 0; }
+    .barra-modo.visible { animation: subeBarra 0.3s var(--suave); }
     .barra-modo button { margin-left: auto; background: none; border: none; color: #c3b3ff; cursor: pointer; font-size: 13px; }
 
-    .barra-grabando { display: none; align-items: center; gap: 8px; padding: 6px 12px; background: #3a1414; border-top: 1px solid #2e2e2e; font-size: 12px; color: #ff9b9b; flex-shrink: 0; }
+    .barra-grabando { display: none; align-items: center; gap: 8px; padding: 6px 12px; background: #3a1414; border-top: 1px solid var(--borde); font-size: 12px; color: #ff9b9b; flex-shrink: 0; }
+    .barra-grabando.visible { animation: subeBarra 0.3s var(--suave); }
     .barra-grabando .punto { width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; animation: parpadeo 1s infinite; }
     @keyframes parpadeo { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .barra-grabando button { margin-left: auto; background: none; border: none; color: #ff9b9b; cursor: pointer; font-size: 13px; font-weight: 700; }
 
-    .chat-input { display: flex; padding: 10px 12px; background: #0d0d0d; border-top: 1px solid #2e2e2e; gap: 6px; flex-shrink: 0; padding-bottom: max(14px, env(safe-area-inset-bottom)); flex-wrap: nowrap; }
-    .chat-input input[type="text"] { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid #5a5a5a; border-radius: 24px; outline: none; font-size: 16px; background: #1f1f1f; color: #ffffff; }
+    /* ---------- Entrada de texto ---------- */
+    .chat-input { display: flex; padding: 10px 12px; background: var(--fondo); border-top: 1px solid var(--borde); gap: 6px; flex-shrink: 0; padding-bottom: max(14px, env(safe-area-inset-bottom)); flex-wrap: nowrap; align-items: center; }
+    .chat-input input[type="text"] { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid #5a5a5a; border-radius: 24px; outline: none; font-size: 16px; background: #1f1f1f; color: #ffffff; transition: border-color 0.25s, box-shadow 0.3s, background 0.25s; }
     .chat-input input[type="text"]::placeholder { color: #b5b5b5; }
-    .chat-input input[type="text"]:focus { border-color: #8ab4ff; }
-    .btn-icono { background: #1f1f1f; border: 1px solid #5a5a5a; border-radius: 50%; width: 38px; height: 38px; font-size: 15px; cursor: pointer; flex-shrink: 0; color: #fff; }
-    .btn-icono:hover { background: #2a2a2a; }
-    .btn-icono.activo { background: #ff4d4d; color: #fff; border-color: #ff4d4d; }
-    .chat-input button.enviar { background: #8ab4ff; color: #0d0d0d; border: none; border-radius: 20px; padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 700; transition: background 0.2s; flex-shrink: 0; }
-    .chat-input button.enviar:disabled { background: #4a4a4a; color: #888; cursor: not-allowed; }
-    .chat-input button.enviar:hover:not(:disabled) { background: #a8c8ff; }
+    .chat-input input[type="text"]:focus { border-color: var(--acento); box-shadow: 0 0 0 4px rgba(138,180,255,0.14); background: #232323; }
+    .btn-icono { background: #1f1f1f; border: 1px solid #5a5a5a; border-radius: 50%; width: 38px; height: 38px; font-size: 15px; cursor: pointer; flex-shrink: 0; color: #fff; transition: background 0.2s, transform 0.25s var(--resorte), border-color 0.2s; }
+    .btn-icono:hover { background: #2a2a2a; border-color: #7a7a7a; transform: translateY(-2px); }
+    .btn-icono:active { transform: scale(0.9); }
+    .btn-icono.activo { background: #ff4d4d; color: #fff; border-color: #ff4d4d; animation: latido 1.2s ease-in-out infinite; }
+    @keyframes latido { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,77,0.5); } 50% { box-shadow: 0 0 0 9px rgba(255,77,77,0); } }
+    #btnModoImagen.activo { background: #6d4bd1; border-color: #6d4bd1; animation: none; box-shadow: 0 0 14px rgba(109,75,209,0.6); }
+    .chat-input button.enviar { display: inline-flex; align-items: center; gap: 6px; background: var(--acento); color: #0d0d0d; border: none; border-radius: 20px; padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 700; transition: background 0.25s, transform 0.25s var(--resorte), box-shadow 0.3s; flex-shrink: 0; }
+    .chat-input button.enviar svg { width: 16px; height: 16px; transition: transform 0.3s var(--suave); }
+    .chat-input button.enviar:disabled { background: #3a3a3a; color: #888; cursor: not-allowed; }
+    .chat-input button.enviar:hover:not(:disabled) { background: #a8c8ff; box-shadow: 0 4px 18px rgba(138,180,255,0.35); transform: translateY(-1px); }
+    .chat-input button.enviar:hover:not(:disabled) svg { transform: translateX(3px); }
+    .chat-input button.enviar:active:not(:disabled) { transform: scale(0.94); }
 
-    .overlay-sidebar { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 15; }
+    .overlay-sidebar { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 15; opacity: 0; pointer-events: none; transition: opacity 0.35s ease; }
 
     @media (max-width: 640px) {
-        .app-shell { max-width: 100%; height: 100vh; max-height: 100vh; border-radius: 0; border: none; }
-        .sidebar { position: absolute; top: 0; left: 0; bottom: 0; transform: translateX(-100%); }
-        .sidebar.abierta { transform: translateX(0); }
-        .btn-cerrar-sidebar.abierta { display: block; }
+        .app-shell { max-width: 100%; height: 100vh; height: 100dvh; max-height: 100vh; max-height: 100dvh; border-radius: 0; border: none; }
+        .sidebar { position: absolute; top: 0; left: 0; bottom: 0; transform: translateX(-100%); box-shadow: none; }
+        .sidebar.abierta { transform: translateX(0); box-shadow: 10px 0 40px rgba(0,0,0,0.6); }
+        .btn-cerrar-sidebar.abierta { display: block; animation: fadeSimple 0.3s 0.2s both; }
         .btn-menu { display: block; }
-        .overlay-sidebar.abierta { display: block; }
+        .overlay-sidebar { display: block; }
+        .overlay-sidebar.abierta { opacity: 1; pointer-events: auto; }
         .chat-input { padding-left: 8px; padding-right: 8px; }
+        .chat-input button.enviar span { display: none; }
+        .chat-input button.enviar { padding: 10px 12px; }
+        .message { max-width: 90%; }
+    }
+
+    /* Respeta a quien tiene activado "reducir movimiento" en su dispositivo */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
     }
 </style>
 </head>
@@ -139,14 +267,14 @@
         <button class="btn-nuevo-chat" id="btnNuevoChat">✏️ Nuevo chat</button>
         <div class="etiqueta-seccion">RECIENTES</div>
         <div class="lista-conversaciones" id="listaConversaciones"></div>
-        <button class="btn-cerrar-sidebar" id="btnCerrarSidebar">✕</button>
+        <button class="btn-cerrar-sidebar" id="btnCerrarSidebar" aria-label="Cerrar menú">✕</button>
     </aside>
 
     <div class="overlay-sidebar" id="overlaySidebar"></div>
 
     <div class="main-chat">
         <div class="chat-header">
-            <button class="btn-menu" id="btnMenu">☰</button>
+            <button class="btn-menu" id="btnMenu" aria-label="Abrir menú">☰</button>
             <div class="titulos">
                 <span>CodIA</span>
                 <span class="subtitulo">Asistente de Programación · Proyecto de Grado</span>
@@ -156,6 +284,7 @@
 
         <div id="estadoConexion" class="estado-conexion aviso">Conectando con el servidor...</div>
         <div class="chat-messages" id="chatMessages"></div>
+        <button class="btn-bajar" id="btnBajar" aria-label="Ir al final">↓</button>
 
         <div class="barra-modo" id="barraModoImagen">
             🎨 Modo generar imagen: escribe una descripción y presiona enviar
@@ -181,17 +310,21 @@
             <input type="file" id="inputImagen" accept="image/*" hidden>
             <input type="file" id="inputDocumento" accept=".pdf,.docx" hidden>
             <input type="text" id="userInput" placeholder="Escribe tu mensaje..." autocomplete="off">
-            <button class="enviar" id="sendBtn">Enviar</button>
+            <button class="enviar" id="sendBtn" aria-label="Enviar">
+                <span>Enviar</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
         </div>
     </div>
 
 </div>
 
 <script>
-    // IMPORTANTE: dentro de una app nativa (Android/iOS) no existe tu
-    // 'localhost'; reemplaza esto por la URL pública de tu backend ya
-    // desplegado (ver README.md) ANTES de compilar el .apk/.ipa.
-    const API_URL = window.CODIA_API_URL || 'https://TU-BACKEND-DESPLEGADO.example.com';
+    // URL del backend. Para probar contra un backend local, define
+    // window.CODIA_API_URL = 'http://127.0.0.1:8000' antes de este script
+    // (127.0.0.1 y no 'localhost': en Windows 'localhost' puede resolver a
+    // IPv6 y dar "Failed to fetch" aunque el servidor esté corriendo).
+    const API_URL = window.CODIA_API_URL || 'https://codia-backend.onrender.com';
 
     if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
 
@@ -221,6 +354,7 @@
     const btnCancelarModoImagen = document.getElementById('btnCancelarModoImagen');
     const btnMicrofono = document.getElementById('btnMicrofono');
     const toggleVoz = document.getElementById('toggleVoz');
+    const btnBajar = document.getElementById('btnBajar');
 
     let conversacionActualId = null;
     let imagenPendiente = null;
@@ -229,6 +363,32 @@
     let vozActiva = false;
     let capacidades = {};
     let contadorDiagramas = 0;
+    let listaYaAnimada = false;
+
+    const reducirMovimiento = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Muestra u oculta una barra (display + animación de entrada)
+    function mostrarBarra(el, visible) {
+        el.style.display = visible ? 'flex' : 'none';
+        el.classList.remove('visible');
+        if (visible) { void el.offsetWidth; el.classList.add('visible'); }
+    }
+
+    // ===== Scroll inteligente =====
+    // Si la persona sube a leer algo, NO la arrastramos hacia abajo mientras
+    // CodIA escribe; aparece un botón ↓ para volver cuando quiera.
+    let pegadoAbajo = true;
+    function distanciaAlFinal() { return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight; }
+    chatMessages.addEventListener('scroll', () => {
+        pegadoAbajo = distanciaAlFinal() < 90;
+        btnBajar.classList.toggle('visible', !pegadoAbajo);
+    }, { passive: true });
+    function scrollAbajo() { if (pegadoAbajo) chatMessages.scrollTop = chatMessages.scrollHeight; }
+    function scrollSuave() {
+        pegadoAbajo = true;
+        chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: reducirMovimiento ? 'auto' : 'smooth' });
+    }
+    btnBajar.addEventListener('click', scrollSuave);
 
     // ===== Sidebar =====
     function abrirSidebar() { sidebar.classList.add('abierta'); btnCerrarSidebar.classList.add('abierta'); overlaySidebar.classList.add('abierta'); }
@@ -238,27 +398,45 @@
     overlaySidebar.addEventListener('click', cerrarSidebar);
 
     // ===== Voz: lectura en voz alta (Web Speech API - SpeechSynthesis) =====
+    let vocesDisponibles = [];
+    function cargarVoces() { vocesDisponibles = speechSynthesis.getVoices(); }
+    if ('speechSynthesis' in window) {
+        cargarVoces();
+        speechSynthesis.onvoiceschanged = cargarVoces; // las voces cargan async en algunos navegadores
+    }
+
     toggleVoz.addEventListener('click', () => {
         vozActiva = !vozActiva;
         toggleVoz.classList.toggle('activo', vozActiva);
-        if (!vozActiva) speechSynthesis.cancel();
+        if (!vozActiva && 'speechSynthesis' in window) speechSynthesis.cancel();
     });
-    function leerEnVozAlta(texto) {
-        if (!vozActiva || !('speechSynthesis' in window)) return;
-        const textoLimpio = texto.replace(/```[\s\S]*?```/g, 'código omitido.');
-        const utterance = new SpeechSynthesisUtterance(textoLimpio);
-        utterance.lang = 'es-ES';
-        speechSynthesis.cancel();
-        speechSynthesis.speak(utterance);
-    }
 
-    // ===== Voz: entrada por micrófono =====
-    // En vez de usar el reconocimiento de voz del navegador (SpeechRecognition),
-    // que depende del servicio en la nube de Google y por eso NO funciona en
-    // Brave ni Firefox, grabamos el audio con MediaRecorder (soportado en
-    // TODOS los navegadores modernos) y lo mandamos al backend, que lo
-    // transcribe con Whisper (a través de Groq). Así funciona igual en
-    // cualquier navegador.
+    // leerManual: SIEMPRE lee (botón 🔊 de cada mensaje = orden directa).
+    // leerEnVozAlta: solo lee si el interruptor "🔊 Voz" está activado.
+    function leerManual(texto) {
+        if (!('speechSynthesis' in window)) {
+            alert('Tu navegador no soporta lectura en voz alta.');
+            return;
+        }
+        const textoLimpio = texto.replace(/```[\s\S]*?```/g, 'código omitido.');
+        speechSynthesis.cancel();
+        // Pequeño retraso: en Chrome, speak() justo después de cancel() a
+        // veces se descarta en silencio (bug conocido de Chromium).
+        setTimeout(() => {
+            const utterance = new SpeechSynthesisUtterance(textoLimpio);
+            const vozEspanol = vocesDisponibles.find((v) => v.lang && v.lang.toLowerCase().startsWith('es'));
+            if (vozEspanol) {
+                utterance.voice = vozEspanol;
+                utterance.lang = vozEspanol.lang;
+            }
+            utterance.onerror = (e) => console.error('Error al leer en voz alta:', e);
+            speechSynthesis.speak(utterance);
+        }, 60);
+    }
+    function leerEnVozAlta(texto) { if (vozActiva) leerManual(texto); }
+    toggleVoz.addEventListener('dblclick', () => leerManual('Prueba de sonido de CodIA.'));
+
+    // ===== Voz: entrada por micrófono (MediaRecorder + Whisper en el backend) =====
     const barraGrabando = document.getElementById('barraGrabando');
     const btnDetenerGrabacion = document.getElementById('btnDetenerGrabacion');
     let grabadora = null;
@@ -277,7 +455,7 @@
             };
             grabadora.start();
             btnMicrofono.classList.add('activo');
-            barraGrabando.style.display = 'flex';
+            mostrarBarra(barraGrabando, true);
         } catch (e) {
             alert('No se pudo acceder al micrófono. Revisa los permisos del navegador.');
         }
@@ -286,7 +464,7 @@
     function detenerGrabacion() {
         if (grabadora && grabadora.state !== 'inactive') grabadora.stop();
         btnMicrofono.classList.remove('activo');
-        barraGrabando.style.display = 'none';
+        mostrarBarra(barraGrabando, false);
     }
 
     async function transcribirYcolocarEnInput(blobAudio) {
@@ -328,7 +506,8 @@
             const soportaGrabacion = !!(navigator.mediaDevices && window.MediaRecorder);
             btnMicrofono.style.display = (capacidades.voz_disponible && soportaGrabacion) ? 'block' : 'none';
             if (capacidades.gemini_disponible || capacidades.groq_disponible) {
-                estadoConexion.textContent = '● Conectado a CodIA';
+                const nClaves = ((capacidades.claves || {}).gemini || {}).total || 0;
+                estadoConexion.textContent = '● Conectado a CodIA' + (nClaves > 1 ? ` · ${nClaves} claves de IA activas` : '');
                 estadoConexion.className = 'estado-conexion ok';
             } else {
                 estadoConexion.textContent = '⚠ Servidor sin claves de IA configuradas';
@@ -344,20 +523,33 @@
         const res = await fetch(`${API_URL}/api/conversaciones?usuario_id=${usuarioId}`);
         const conversaciones = await res.json();
         listaConversaciones.innerHTML = '';
-        conversaciones.forEach((c) => {
+        conversaciones.forEach((c, i) => {
             const item = document.createElement('div');
-            item.className = 'item-conversacion' + (c.id === conversacionActualId ? ' activa' : '');
-            item.innerHTML = `<span class="titulo-conv">${escapeHtml(c.titulo)}</span><button class="btn-borrar" title="Borrar">🗑</button>`;
-            item.querySelector('.titulo-conv').addEventListener('click', () => abrirConversacion(c.id));
-            item.querySelector('.btn-borrar').addEventListener('click', async (e) => {
+            item.className = 'item-conversacion' + (c.id === conversacionActualId ? ' activa' : '') + (listaYaAnimada ? '' : ' nuevo');
+            item.style.setProperty('--i', Math.min(i, 10));
+            const titulo = document.createElement('span');
+            titulo.className = 'titulo-conv';
+            titulo.textContent = c.titulo;
+            const borrar = document.createElement('button');
+            borrar.className = 'btn-borrar';
+            borrar.title = 'Borrar';
+            borrar.textContent = '🗑';
+            item.append(titulo, borrar);
+            item.addEventListener('click', () => { if (c.id !== conversacionActualId) abrirConversacion(c.id); else cerrarSidebar(); });
+            borrar.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                await fetch(`${API_URL}/api/conversaciones/${c.id}`, { method: 'DELETE' });
+                item.classList.add('saliendo');
+                await Promise.all([
+                    fetch(`${API_URL}/api/conversaciones/${c.id}`, { method: 'DELETE' }),
+                    new Promise((r) => setTimeout(r, reducirMovimiento ? 0 : 300)),
+                ]);
                 if (c.id === conversacionActualId) conversacionActualId = null;
                 await cargarListaConversaciones();
                 if (!conversacionActualId) await iniciar();
             });
             listaConversaciones.appendChild(item);
         });
+        listaYaAnimada = true;
         return conversaciones;
     }
 
@@ -375,14 +567,18 @@
         const res = await fetch(`${API_URL}/api/conversaciones/${id}/mensajes`);
         const mensajes = await res.json();
         chatMessages.innerHTML = '';
+        chatMessages.classList.remove('cambio'); void chatMessages.offsetWidth; chatMessages.classList.add('cambio');
+        pegadoAbajo = true;
         if (mensajes.length === 0) {
-            agregarMensajeIA('¡Hola! Soy CodIA, tu asistente de programación. Escríbeme algo para comenzar 😊');
+            // El saludo se "escribe" solo, para que la app se sienta viva
+            agregarMensajeIA('¡Hola! Soy CodIA, tu asistente de programación. Escríbeme algo para comenzar 😊', null, { escribir: true });
         } else {
             mensajes.forEach((m) => {
-                if (m.rol === 'user') agregarMensajeUsuario(m.contenido, m.imagen_url, m.documento_nombre);
-                else agregarMensajeIA(m.contenido, m.imagen_url);
+                if (m.rol === 'user') agregarMensajeUsuario(m.contenido, m.imagen_url, m.documento_nombre, { sinAnimar: true });
+                else agregarMensajeIA(m.contenido, m.imagen_url, { sinAnimar: true });
             });
         }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
         await cargarListaConversaciones();
     }
 
@@ -395,111 +591,330 @@
         else await abrirConversacion((await crearConversacion()).id);
     }
 
-    function escapeHtml(texto) { const d = document.createElement('div'); d.textContent = texto; return d.innerHTML; }
-    function scrollAbajo() { chatMessages.scrollTop = chatMessages.scrollHeight; }
-
-    function agregarMensajeUsuario(texto, imagenUrl, documentoNombre) {
-        const div = document.createElement('div');
-        div.className = 'message user';
-        let html = `<p>${escapeHtml(texto)}</p>`;
-        if (imagenUrl) html += `<img class="adjunta" src="${API_URL}${imagenUrl}" alt="Imagen adjunta">`;
-        if (documentoNombre) html += `<div class="chip-documento">📄 ${escapeHtml(documentoNombre)}</div>`;
-        div.innerHTML = html;
-        chatMessages.appendChild(div);
-        scrollAbajo();
+    // =====================================================================
+    //  IMÁGENES: marcador que brilla mientras carga, aparece con desenfoque
+    //  → nítida, y al tocarla se abre en un visor a pantalla completa.
+    // =====================================================================
+    function crearImagen(src, pie) {
+        const wrap = document.createElement('figure');
+        wrap.className = 'imagen-wrap cargando';
+        const brillo = document.createElement('div');
+        brillo.className = 'shimmer';
+        const img = document.createElement('img');
+        img.alt = pie || 'Imagen';
+        img.decoding = 'async';
+        img.addEventListener('load', () => {
+            // dos frames: así el navegador pinta el estado borroso antes de animar
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                wrap.classList.remove('cargando');
+                wrap.classList.add('lista');
+                scrollAbajo();
+            }));
+        });
+        img.addEventListener('error', () => {
+            wrap.className = 'imagen-wrap fallo';
+            wrap.textContent = 'No se pudo cargar la imagen.';
+        });
+        img.src = src;
+        wrap.append(brillo, img);
+        if (pie) {
+            const p = document.createElement('div');
+            p.className = 'pie-imagen';
+            p.textContent = pie;
+            wrap.appendChild(p);
+        }
+        wrap.addEventListener('click', () => { if (wrap.classList.contains('lista')) abrirVisor(img.src); });
+        return wrap;
     }
 
-    function rellenarContenidoIA(div, texto) {
-        div.innerHTML = '';
-        const regex = /```(\w+)?\n([\s\S]*?)```/g;
-        let ultimoIndice = 0, coincidencia, huboBloque = false;
-        while ((coincidencia = regex.exec(texto)) !== null) {
-            huboBloque = true;
-            const textoPrevio = texto.slice(ultimoIndice, coincidencia.index).trim();
-            if (textoPrevio) { const p = document.createElement('p'); p.textContent = textoPrevio; div.appendChild(p); }
-            const lenguaje = (coincidencia[1] || 'texto').toLowerCase();
-            div.appendChild(lenguaje === 'mermaid' ? crearBloqueDiagrama(coincidencia[2]) : crearBloqueCodigo(lenguaje, coincidencia[2]));
-            ultimoIndice = regex.lastIndex;
+    function abrirVisor(src) {
+        const visor = document.createElement('div');
+        visor.className = 'visor';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = 'Imagen ampliada';
+        const acciones = document.createElement('div');
+        acciones.className = 'acciones-visor';
+        const descargar = document.createElement('a');
+        descargar.href = src; descargar.download = 'codia-imagen.png'; descargar.textContent = '⬇ Descargar';
+        descargar.addEventListener('click', (e) => e.stopPropagation());
+        const cerrar = document.createElement('button');
+        cerrar.textContent = '✕ Cerrar';
+        acciones.append(descargar, cerrar);
+        visor.append(img, acciones);
+        document.body.appendChild(visor);
+        requestAnimationFrame(() => visor.classList.add('abierto'));
+        function cerrarVisor() {
+            document.removeEventListener('keydown', alTeclear);
+            visor.classList.remove('abierto');
+            setTimeout(() => visor.remove(), reducirMovimiento ? 0 : 350);
         }
-        const resto = texto.slice(ultimoIndice).trim();
-        if (resto || !huboBloque) { const p = document.createElement('p'); p.textContent = resto || texto; div.appendChild(p); }
+        function alTeclear(e) { if (e.key === 'Escape') cerrarVisor(); }
+        document.addEventListener('keydown', alTeclear);
+        visor.addEventListener('click', cerrarVisor);
+        cerrar.addEventListener('click', cerrarVisor);
     }
 
-    function agregarMensajeIA(texto, imagenUrl) {
+    // =====================================================================
+    //  RENDERIZADOR PROGRESIVO
+    //  Convierte el texto de CodIA (con ```código``` y ```mermaid```) en
+    //  elementos del chat MIENTRAS se escribe: los bloques de código nacen
+    //  en cuanto aparece su ``` y se van llenando letra por letra, así no hay
+    //  el "salto" brusco de texto plano → texto con formato del final.
+    // =====================================================================
+    function trocear(texto) {
+        const segs = [];
+        let i = 0;
+        while (true) {
+            const ini = texto.indexOf('```', i);
+            if (ini === -1) { segs.push({ t: 'texto', c: texto.slice(i) }); break; }
+            if (ini > i) segs.push({ t: 'texto', c: texto.slice(i, ini) });
+            const finLinea = texto.indexOf('\n', ini + 3);
+            if (finLinea === -1) { // la cabecera ```lenguaje aún no terminó de llegar
+                segs.push({ t: 'codigo', lang: texto.slice(ini + 3).trim().toLowerCase() || 'texto', c: '', cerrado: false });
+                break;
+            }
+            const lang = (texto.slice(ini + 3, finLinea).trim().split(/\s+/)[0] || 'texto').toLowerCase();
+            const cierre = texto.indexOf('```', finLinea + 1);
+            if (cierre === -1) { segs.push({ t: 'codigo', lang, c: texto.slice(finLinea + 1), cerrado: false }); break; }
+            segs.push({ t: 'codigo', lang, c: texto.slice(finLinea + 1, cierre), cerrado: true });
+            i = cierre + 3;
+        }
+        return segs;
+    }
+
+    // Formato en línea seguro (sin innerHTML): `código` y **negrita**
+    function escribirTextoEnLinea(p, texto) {
+        p.textContent = '';
+        texto.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).forEach((trozo) => {
+            if (!trozo) return;
+            if (trozo.length > 2 && trozo[0] === '`' && trozo[trozo.length - 1] === '`') {
+                const c = document.createElement('code'); c.className = 'inline'; c.textContent = trozo.slice(1, -1); p.appendChild(c);
+            } else if (trozo.length > 4 && trozo.startsWith('**') && trozo.endsWith('**')) {
+                const b = document.createElement('strong'); b.textContent = trozo.slice(2, -2); p.appendChild(b);
+            } else {
+                p.appendChild(document.createTextNode(trozo));
+            }
+        });
+    }
+
+    function crearRenderizador(contenedor, animarBloques) {
+        const nodos = [];
+        const cursor = document.createElement('span');
+        cursor.className = 'cursor-escritura';
+
+        function clave(seg) { return seg.t === 'texto' ? 'texto' : (seg.lang === 'mermaid' ? 'mermaid' : 'codigo:' + seg.lang); }
+
+        function crearNodo(seg) {
+            let nodo;
+            if (seg.t === 'texto') {
+                const p = document.createElement('p');
+                nodo = { clave: 'texto', el: p, ultimo: null, ancla: p };
+            } else if (seg.lang === 'mermaid') {
+                const div = document.createElement('div');
+                div.className = 'bloque-diagrama dibujando';
+                div.textContent = 'Dibujando diagrama…';
+                nodo = { clave: 'mermaid', el: div, ultimo: null, ancla: null, dibujado: false };
+            } else {
+                const bloque = crearBloqueCodigo(seg.lang);
+                nodo = { clave: 'codigo:' + seg.lang, el: bloque.el, bloque, ultimo: null, ancla: bloque.codeEl };
+            }
+            if (animarBloques) nodo.el.classList.add('bloque-nuevo');
+            contenedor.insertBefore(nodo.el, contenedor.querySelector('.btn-leer') || contenedor.querySelector('.imagen-wrap'));
+            return nodo;
+        }
+
+        return {
+            pintar(texto, final) {
+                let segs = trocear(texto);
+                if (!final && segs.length) { // evita parpadeos con ``  a medio escribir
+                    const u = segs[segs.length - 1];
+                    if (u.t === 'texto') u.c = u.c.replace(/`{1,2}$/, '');
+                }
+                segs = segs.filter((s) => s.t !== 'texto' || s.c.trim() !== '');
+                if (segs.length === 0 && !final) segs = [{ t: 'texto', c: '' }];
+
+                segs.forEach((seg, k) => {
+                    if (nodos[k] && nodos[k].clave !== clave(seg)) {
+                        while (nodos.length > k) nodos.pop().el.remove();
+                    }
+                    if (!nodos[k]) nodos[k] = crearNodo(seg);
+                    const n = nodos[k];
+                    const contenido = seg.t === 'texto' ? seg.c.trim() : seg.c;
+                    if (n.clave === 'texto') {
+                        if (n.ultimo !== contenido) { escribirTextoEnLinea(n.el, contenido); n.ultimo = contenido; }
+                    } else if (n.clave === 'mermaid') {
+                        if (seg.cerrado && !n.dibujado) {
+                            n.dibujado = true;
+                            dibujarDiagrama(n.el, contenido);
+                        }
+                    } else {
+                        if (n.ultimo !== contenido) { n.bloque.set(contenido); n.ultimo = contenido; }
+                        n.bloque.estado(seg.cerrado || final);
+                    }
+                });
+                while (nodos.length > segs.length) nodos.pop().el.remove();
+
+                // El cursor luminoso va al final del último bloque que acepta texto
+                cursor.remove();
+                if (!final) {
+                    for (let k = nodos.length - 1; k >= 0; k--) {
+                        if (nodos[k].ancla) { nodos[k].ancla.appendChild(cursor); break; }
+                    }
+                }
+            },
+        };
+    }
+
+    function dibujarDiagrama(contenedor, definicion) {
+        if (!window.mermaid) { contenedor.className = 'bloque-diagrama'; contenedor.textContent = definicion; return; }
+        const idDiagrama = `mermaid-${Date.now()}-${contadorDiagramas++}`;
+        mermaid.render(idDiagrama, definicion.trim())
+            .then(({ svg }) => { contenedor.className = 'bloque-diagrama'; contenedor.innerHTML = svg; scrollAbajo(); })
+            .catch(() => {
+                const huerfano = document.getElementById('d' + idDiagrama); if (huerfano) huerfano.remove();
+                contenedor.className = 'bloque-diagrama error-diagrama';
+                contenedor.textContent = 'No se pudo dibujar el diagrama:\n' + definicion;
+            });
+    }
+
+    // ===== Efecto de escritura fluido =====
+    // El servidor manda pedazos a ráfagas irregulares. En vez de pintarlos tal
+    // cual (a tirones), los metemos en una cola y los mostramos a ritmo
+    // constante con requestAnimationFrame: más rápido si hay mucho acumulado
+    // y más calmado si no, para que siempre parezca que alguien escribe.
+    function crearEscritor(pintar) {
+        let objetivo = '', mostrado = 0, acumulador = 0, ultimaMarca = 0, terminado = false, raf = 0, resolver = null;
+
+        function paso(marca) {
+            const dt = Math.min(64, ultimaMarca ? marca - ultimaMarca : 16);
+            ultimaMarca = marca;
+            const resto = objetivo.length - mostrado;
+            if (resto > 0) {
+                // caracteres por segundo: base cómoda de leer + aceleración según lo acumulado
+                const cps = terminado ? Math.max(500, resto / 0.45) : Math.max(55, resto * 4.5);
+                acumulador += (cps * dt) / 1000;
+                let n = Math.floor(acumulador);
+                if (n > 0) {
+                    acumulador -= n;
+                    mostrado = Math.min(objetivo.length, mostrado + n);
+                    const cod = objetivo.charCodeAt(mostrado - 1);
+                    if (cod >= 0xd800 && cod <= 0xdbff && mostrado < objetivo.length) mostrado++; // no cortar emojis
+                    pintar(objetivo.slice(0, mostrado), false);
+                    scrollAbajo();
+                }
+            }
+            if (terminado && mostrado >= objetivo.length) {
+                pintar(objetivo, true);
+                scrollAbajo();
+                raf = 0;
+                if (resolver) resolver();
+                return;
+            }
+            raf = requestAnimationFrame(paso);
+        }
+
+        return {
+            agregar(texto) {
+                objetivo += texto;
+                if (reducirMovimiento) { mostrado = objetivo.length; pintar(objetivo, false); scrollAbajo(); return; }
+                if (!raf) { ultimaMarca = 0; raf = requestAnimationFrame(paso); }
+            },
+            terminar() {
+                terminado = true;
+                return new Promise((res) => {
+                    resolver = res;
+                    if (reducirMovimiento || !raf) { mostrado = objetivo.length; pintar(objetivo, true); res(); }
+                });
+            },
+            texto() { return objetivo; },
+        };
+    }
+
+    // ===== Mensajes =====
+    function agregarMensajeUsuario(texto, imagenUrl, documentoNombre, opciones) {
         const div = document.createElement('div');
-        div.className = 'message ia';
-        rellenarContenidoIA(div, texto);
-
-        if (imagenUrl) {
-            const img = document.createElement('img');
-            img.className = 'adjunta';
-            img.src = `${API_URL}${imagenUrl}`;
-            div.appendChild(img);
+        div.className = 'message user' + (opciones && opciones.sinAnimar ? '' : ' anima');
+        if (texto) { const p = document.createElement('p'); p.textContent = texto; div.appendChild(p); }
+        if (imagenUrl) div.appendChild(crearImagen(imagenUrl.startsWith('data:') || imagenUrl.startsWith('blob:') ? imagenUrl : `${API_URL}${imagenUrl}`));
+        if (documentoNombre) {
+            const chip = document.createElement('div');
+            chip.className = 'chip-documento';
+            chip.textContent = '📄 ' + documentoNombre;
+            div.appendChild(chip);
         }
-
-        if ('speechSynthesis' in window) {
-            const btnLeer = document.createElement('button');
-            btnLeer.className = 'btn-leer';
-            btnLeer.title = 'Leer en voz alta';
-            btnLeer.textContent = '🔊';
-            btnLeer.addEventListener('click', () => leerEnVozAlta(texto));
-            div.appendChild(btnLeer);
-        }
-
         chatMessages.appendChild(div);
-        scrollAbajo();
+        if (!(opciones && opciones.sinAnimar)) scrollSuave();
         return div;
     }
 
-    // ===== Streaming: crea una burbuja vacía que se va llenando con texto
-    // plano a medida que llegan los pedazos, y al final se reemplaza por la
-    // versión con formato completo (bloques de código, diagramas, etc.) =====
-    function crearFilaIAVacia() {
+    function agregarBotonLeer(div, texto) {
+        if (!('speechSynthesis' in window)) return;
+        const btnLeer = document.createElement('button');
+        btnLeer.className = 'btn-leer';
+        btnLeer.title = 'Leer en voz alta';
+        btnLeer.setAttribute('aria-label', 'Leer en voz alta');
+        btnLeer.textContent = '🔊';
+        btnLeer.addEventListener('click', () => leerManual(texto));
+        div.appendChild(btnLeer);
+    }
+
+    // opciones: { sinAnimar } para historial; { escribir } para teclear el texto
+    function agregarMensajeIA(texto, imagenUrl, opciones) {
+        opciones = opciones || {};
         const div = document.createElement('div');
-        div.className = 'message ia';
-        const p = document.createElement('p');
-        p.textContent = '';
-        div.appendChild(p);
+        div.className = 'message ia' + (opciones.sinAnimar ? '' : ' anima');
         chatMessages.appendChild(div);
-        scrollAbajo();
-        return { div, p };
-    }
+        const render = crearRenderizador(div, !opciones.sinAnimar);
 
-    function finalizarFilaIA(div, textoCompleto) {
-        rellenarContenidoIA(div, textoCompleto);
-        if ('speechSynthesis' in window) {
-            const btnLeer = document.createElement('button');
-            btnLeer.className = 'btn-leer';
-            btnLeer.title = 'Leer en voz alta';
-            btnLeer.textContent = '🔊';
-            btnLeer.addEventListener('click', () => leerEnVozAlta(textoCompleto));
-            div.appendChild(btnLeer);
-        }
-        scrollAbajo();
-    }
+        const rematar = () => {
+            if (imagenUrl) div.appendChild(crearImagen(`${API_URL}${imagenUrl}`));
+            agregarBotonLeer(div, texto);
+            scrollAbajo();
+        };
 
-    function crearBloqueDiagrama(definicion) {
-        const contenedor = document.createElement('div');
-        contenedor.className = 'bloque-diagrama';
-        const idDiagrama = `mermaid-${Date.now()}-${contadorDiagramas++}`;
-        if (window.mermaid) {
-            mermaid.render(idDiagrama, definicion.trim())
-                .then(({ svg }) => { contenedor.innerHTML = svg; })
-                .catch(() => { contenedor.classList.add('error-diagrama'); contenedor.textContent = 'No se pudo dibujar el diagrama:\n' + definicion; });
+        if (opciones.escribir && !reducirMovimiento) {
+            const escritor = crearEscritor((t, fin) => render.pintar(t, fin));
+            escritor.agregar(texto);
+            escritor.terminar().then(rematar);
         } else {
-            contenedor.textContent = definicion;
+            render.pintar(texto, true);
+            rematar();
         }
-        return contenedor;
+        if (!opciones.sinAnimar) scrollSuave();
+        return div;
     }
 
+    function mostrarEscribiendo() {
+        quitarEscribiendo();
+        const typing = document.createElement('div');
+        typing.className = 'typing'; typing.id = 'typingIndicator';
+        typing.setAttribute('aria-label', 'CodIA está escribiendo');
+        typing.innerHTML = '<span></span><span></span><span></span>';
+        chatMessages.appendChild(typing);
+        scrollSuave();
+    }
+    function quitarEscribiendo() { const t = document.getElementById('typingIndicator'); if (t) t.remove(); }
+
+    function mostrarError(mensaje) {
+        const div = document.createElement('div');
+        div.className = 'message error';
+        div.textContent = mensaje;
+        chatMessages.appendChild(div);
+        scrollSuave();
+    }
+
+    // ===== Bloque de código (se va llenando mientras CodIA escribe) =====
     const LENGUAJES_EJECUTABLES = ['python', 'py', 'javascript', 'js', 'typescript', 'ts', 'java', 'c', 'cpp', 'c++', 'csharp', 'c#', 'php', 'ruby', 'rb', 'go'];
 
-    function crearBloqueCodigo(lenguaje, codigo) {
+    function crearBloqueCodigo(lenguaje) {
+        let codigo = '';
         const contenedor = document.createElement('div');
-        contenedor.className = 'bloque-codigo';
+        contenedor.className = 'bloque-codigo abierto';
         const header = document.createElement('div');
         header.className = 'bloque-codigo-header';
         const etiqueta = document.createElement('span');
+        etiqueta.className = 'etiqueta-lenguaje';
         etiqueta.textContent = lenguaje;
         header.appendChild(etiqueta);
 
@@ -507,9 +922,9 @@
         acciones.className = 'acciones';
         const btnCopiar = document.createElement('button');
         btnCopiar.textContent = '📋 Copiar';
-        btnCopiar.addEventListener('click', () => {
-            navigator.clipboard.writeText(codigo);
-            btnCopiar.textContent = '✅ Copiado';
+        btnCopiar.addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(codigo); btnCopiar.textContent = '✅ Copiado'; }
+            catch (e) { btnCopiar.textContent = '⚠ No se pudo'; }
             setTimeout(() => (btnCopiar.textContent = '📋 Copiar'), 1500);
         });
         acciones.appendChild(btnCopiar);
@@ -517,16 +932,18 @@
         const soportado = LENGUAJES_EJECUTABLES.includes(lenguaje.toLowerCase());
         const btnEjecutar = document.createElement('button');
         btnEjecutar.textContent = '▶ Ejecutar';
-        if (!soportado || !capacidades.ejecutar_codigo_disponible) btnEjecutar.disabled = true;
+        btnEjecutar.disabled = true;
         acciones.appendChild(btnEjecutar);
         header.appendChild(acciones);
         contenedor.appendChild(header);
 
         const pre = document.createElement('pre');
         const code = document.createElement('code');
-        code.textContent = codigo.replace(/\n$/, '');
         pre.appendChild(code);
         contenedor.appendChild(pre);
+
+        let cerrado = false;
+        const puedeEjecutar = () => cerrado && soportado && capacidades.ejecutar_codigo_disponible;
 
         btnEjecutar.addEventListener('click', async () => {
             btnEjecutar.disabled = true;
@@ -565,44 +982,43 @@
                 salidaDiv.className = 'salida-codigo err';
                 salidaDiv.textContent = 'No se pudo ejecutar: ' + e.message;
             } finally {
-                btnEjecutar.disabled = !soportado || !capacidades.ejecutar_codigo_disponible;
+                btnEjecutar.disabled = !puedeEjecutar();
                 btnEjecutar.textContent = '▶ Ejecutar';
                 scrollAbajo();
             }
         });
-        return contenedor;
+
+        return {
+            el: contenedor,
+            codeEl: code,
+            set(c) { codigo = c; code.textContent = c.replace(/\n$/, ''); },
+            estado(yaCerrado) { // true cuando llegó el ``` de cierre
+                if (cerrado === yaCerrado) return;
+                cerrado = yaCerrado;
+                contenedor.classList.toggle('abierto', !cerrado);
+                btnEjecutar.disabled = !puedeEjecutar();
+            },
+        };
     }
 
-    function mostrarEscribiendo() {
-        const typing = document.createElement('div');
-        typing.classList.add('typing'); typing.id = 'typingIndicator'; typing.textContent = 'CodIA está escribiendo...';
-        chatMessages.appendChild(typing); scrollAbajo();
-    }
-    function quitarEscribiendo() { const t = document.getElementById('typingIndicator'); if (t) t.remove(); }
-
-    // ===== Adjuntar imagen =====
-    btnAdjuntarImagen.addEventListener('click', () => inputImagen.click());
-    inputImagen.addEventListener('change', () => {
-        const archivo = inputImagen.files[0];
-        if (!archivo) return;
+    // ===== Funciones compartidas: procesar un archivo venga de donde venga
+    // (el selector de archivos, pegar con Ctrl+V, o arrastrar y soltar) =====
+    function procesarArchivoImagen(archivo) {
         documentoPendiente = null;
         const lector = new FileReader();
         lector.onload = () => {
             const base64 = lector.result.split(',')[1];
-            imagenPendiente = { base64, mime: archivo.type, nombre: archivo.name };
+            imagenPendiente = { base64, mime: archivo.type, nombre: archivo.name || 'imagen-pegada.png' };
             previewAdjuntoThumb.src = lector.result;
             previewAdjuntoThumb.style.display = 'block';
-            previewAdjuntoNombre.textContent = archivo.name;
-            previewAdjunto.style.display = 'flex';
+            previewAdjuntoNombre.textContent = archivo.name || 'Imagen pegada';
+            mostrarBarra(previewAdjunto, true);
+            userInput.focus();
         };
         lector.readAsDataURL(archivo);
-    });
+    }
 
-    // ===== Adjuntar documento (PDF / Word) =====
-    btnAdjuntarDocumento.addEventListener('click', () => inputDocumento.click());
-    inputDocumento.addEventListener('change', () => {
-        const archivo = inputDocumento.files[0];
-        if (!archivo) return;
+    function procesarArchivoDocumento(archivo) {
         imagenPendiente = null;
         const lector = new FileReader();
         lector.onload = () => {
@@ -610,9 +1026,52 @@
             documentoPendiente = { base64, mime: archivo.type, nombre: archivo.name };
             previewAdjuntoThumb.style.display = 'none';
             previewAdjuntoNombre.textContent = '📄 ' + archivo.name;
-            previewAdjunto.style.display = 'flex';
+            mostrarBarra(previewAdjunto, true);
+            userInput.focus();
         };
         lector.readAsDataURL(archivo);
+    }
+
+    function esDocumentoValido(archivo) {
+        const nombre = (archivo.name || '').toLowerCase();
+        return nombre.endsWith('.pdf') || nombre.endsWith('.docx');
+    }
+
+    btnAdjuntarImagen.addEventListener('click', () => inputImagen.click());
+    inputImagen.addEventListener('change', () => { const a = inputImagen.files[0]; if (a) procesarArchivoImagen(a); });
+    btnAdjuntarDocumento.addEventListener('click', () => inputDocumento.click());
+    inputDocumento.addEventListener('change', () => { const a = inputDocumento.files[0]; if (a) procesarArchivoDocumento(a); });
+
+    // Pegar imágenes con Ctrl+V directo en el campo de texto
+    userInput.addEventListener('paste', (evento) => {
+        const items = evento.clipboardData && evento.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type && item.type.startsWith('image/')) {
+                evento.preventDefault();
+                const archivo = item.getAsFile();
+                if (archivo) procesarArchivoImagen(archivo);
+                break;
+            }
+        }
+    });
+
+    // Arrastrar y soltar imágenes o documentos sobre el chat
+    const zonaArrastre = document.querySelector('.main-chat');
+    ['dragenter', 'dragover'].forEach((evt) => {
+        zonaArrastre.addEventListener(evt, (e) => { e.preventDefault(); zonaArrastre.classList.add('arrastrando-archivo'); });
+    });
+    ['dragleave', 'dragend'].forEach((evt) => {
+        zonaArrastre.addEventListener(evt, (e) => { e.preventDefault(); zonaArrastre.classList.remove('arrastrando-archivo'); });
+    });
+    zonaArrastre.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zonaArrastre.classList.remove('arrastrando-archivo');
+        const archivo = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!archivo) return;
+        if (archivo.type && archivo.type.startsWith('image/')) procesarArchivoImagen(archivo);
+        else if (esDocumentoValido(archivo)) procesarArchivoDocumento(archivo);
+        else alert('Solo se pueden arrastrar imágenes o archivos .pdf / .docx');
     });
 
     btnQuitarAdjunto.addEventListener('click', () => {
@@ -625,7 +1084,7 @@
     btnModoImagen.addEventListener('click', () => {
         modoGenerarImagen = true;
         btnModoImagen.classList.add('activo');
-        barraModoImagen.style.display = 'flex';
+        mostrarBarra(barraModoImagen, true);
         userInput.placeholder = 'Describe la imagen que quieres generar...';
         userInput.focus();
     });
@@ -638,9 +1097,19 @@
     btnCancelarModoImagen.addEventListener('click', salirModoImagen);
 
     async function generarImagen(prompt) {
-        agregarMensajeUsuario(`🎨 Genera una imagen: ${prompt}`, null, null);
+        agregarMensajeUsuario(`🎨 Genera una imagen: ${prompt}`);
         sendBtn.disabled = true;
-        mostrarEscribiendo();
+
+        // Tarjeta animada en el lugar donde aparecerá la imagen
+        const burbuja = document.createElement('div');
+        burbuja.className = 'message ia anima';
+        const tarjeta = document.createElement('div');
+        tarjeta.className = 'generando-imagen';
+        tarjeta.innerHTML = '<div class="chispa">✨</div><div class="texto-gen">Creando tu imagen…</div>';
+        burbuja.appendChild(tarjeta);
+        chatMessages.appendChild(burbuja);
+        scrollSuave();
+
         try {
             const res = await fetch(`${API_URL}/api/generar-imagen`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -648,16 +1117,17 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'No se pudo generar la imagen');
-            quitarEscribiendo();
-            agregarMensajeIA(`Aquí tienes la imagen que pediste: "${prompt}"`, data.imagen_url);
+            const texto = `Aquí tienes la imagen que pediste: "${prompt}"`;
+            burbuja.replaceChildren();
+            const render = crearRenderizador(burbuja, false);
+            render.pintar(texto, true);
+            burbuja.appendChild(crearImagen(`${API_URL}${data.imagen_url}`, prompt));
+            agregarBotonLeer(burbuja, texto);
+            scrollAbajo();
             await cargarListaConversaciones();
         } catch (error) {
-            quitarEscribiendo();
-            const div = document.createElement('div');
-            div.className = 'message error';
-            div.textContent = `No se pudo generar la imagen: ${error.message}`;
-            chatMessages.appendChild(div);
-            scrollAbajo();
+            burbuja.remove();
+            mostrarError(`No se pudo generar la imagen: ${error.message}`);
         } finally {
             sendBtn.disabled = false;
             salirModoImagen();
@@ -666,14 +1136,8 @@
 
     // ===== Envío central de mensajes de texto/imagen/documento =====
     async function enviarMensajeInterno(textoParaLaIA, textoParaMostrar) {
-        agregarMensajeUsuario(textoParaMostrar, null, documentoPendiente ? documentoPendiente.nombre : null);
-        if (imagenPendiente) {
-            const ultimaBurbuja = chatMessages.lastElementChild;
-            const img = document.createElement('img');
-            img.className = 'adjunta';
-            img.src = previewAdjuntoThumb.src;
-            ultimaBurbuja.appendChild(img);
-        }
+        const srcImagen = imagenPendiente ? previewAdjuntoThumb.src : null;
+        agregarMensajeUsuario(textoParaMostrar, srcImagen, documentoPendiente ? documentoPendiente.nombre : null);
 
         const cuerpo = {
             usuario_id: usuarioId,
@@ -699,45 +1163,53 @@
             });
 
             if (!res.ok) {
-                // Con streaming, un error llega como JSON normal (no como texto plano)
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data.detail || `Error del servidor (${res.status})`);
             }
 
-            quitarEscribiendo();
-
             if (!res.body || !res.body.getReader) {
-                // Navegador sin soporte de streaming de fetch: leemos todo de una vez
+                // Navegador sin streaming de fetch: leemos todo de una vez
                 const textoCompleto = await res.text();
-                agregarMensajeIA(textoCompleto);
+                quitarEscribiendo();
+                agregarMensajeIA(textoCompleto, null, { escribir: true });
                 leerEnVozAlta(textoCompleto);
             } else {
-                const { div } = crearFilaIAVacia();
                 const lector = res.body.getReader();
                 const decodificador = new TextDecoder('utf-8');
-                let textoCompleto = '';
-                const parrafo = div.querySelector('p');
+                let div = null, escritor = null;
 
                 while (true) {
                     const { done, value } = await lector.read();
                     if (done) break;
-                    textoCompleto += decodificador.decode(value, { stream: true });
-                    parrafo.textContent = textoCompleto; // texto plano mientras llega, sin formato aún
-                    scrollAbajo();
+                    const pedazo = decodificador.decode(value, { stream: true });
+                    if (!pedazo) continue;
+                    if (!escritor) {
+                        // Los puntitos siguen visibles hasta que llega la PRIMERA letra
+                        quitarEscribiendo();
+                        div = document.createElement('div');
+                        div.className = 'message ia anima';
+                        chatMessages.appendChild(div);
+                        const render = crearRenderizador(div, true);
+                        escritor = crearEscritor((t, fin) => render.pintar(t, fin));
+                    }
+                    escritor.agregar(pedazo);
                 }
 
-                finalizarFilaIA(div, textoCompleto);
-                leerEnVozAlta(textoCompleto);
+                quitarEscribiendo();
+                if (escritor) {
+                    escritor.agregar(decodificador.decode()); // vacía el decodificador
+                    await escritor.terminar();
+                    const textoCompleto = escritor.texto();
+                    agregarBotonLeer(div, textoCompleto);
+                    scrollAbajo();
+                    leerEnVozAlta(textoCompleto);
+                }
             }
 
             await cargarListaConversaciones();
         } catch (error) {
             quitarEscribiendo();
-            const div = document.createElement('div');
-            div.className = 'message error';
-            div.textContent = `No se pudo obtener respuesta: ${error.message}`;
-            chatMessages.appendChild(div);
-            scrollAbajo();
+            mostrarError(`No se pudo obtener respuesta: ${error.message}`);
         } finally {
             sendBtn.disabled = false;
             userInput.focus();
@@ -747,6 +1219,7 @@
     function enviarMensaje() {
         const texto = userInput.value.trim();
         if (texto === '' && !imagenPendiente && !documentoPendiente) return;
+        if (sendBtn.disabled) return; // ya hay una respuesta en curso
         userInput.value = '';
         if (modoGenerarImagen) { generarImagen(texto); return; }
         enviarMensajeInterno(texto, texto);
