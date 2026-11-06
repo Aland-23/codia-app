@@ -25,9 +25,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: GEMINI_API_KEY
+      # Varias claves separadas por comas: CodIA las rota y hace failover si una se satura.
+      - key: GEMINI_API_KEYS
         sync: false   # la pides una sola vez en el dashboard de Render; nunca queda en el repo
-      - key: GROQ_API_KEY
+      - key: GROQ_API_KEYS
         sync: false
       - key: GEMINI_IMAGE_MODEL
         value: gemini-2.5-flash-image

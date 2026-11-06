@@ -44,8 +44,10 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# Las claves se leen en claves.py: soporta varias por proveedor
+# (GEMINI_API_KEYS=a,b,c  o  GEMINI_API_KEY_2, _3...) para repartir la carga
+# y no saturar el límite gratuito de una sola clave.
+from claves import PoolClaves, leer_claves
 # Nombre del modelo de Gemini que genera imágenes (Google puede cambiar el
 # nombre con el tiempo; si deja de funcionar, revisa el modelo vigente en
 # https://ai.google.dev/gemini-api/docs/image-generation y actualiza aquí
@@ -152,25 +154,27 @@ INSTRUCCION_SISTEMA = (
     "buena actitud."
 )
 
-_cliente_gemini = None
-_cliente_groq = None
+POOL_GEMINI = PoolClaves("Gemini", [], lambda k: None)
+POOL_GROQ = PoolClaves("Groq", [], lambda k: None)
 GEMINI_DISPONIBLE = False
 GROQ_DISPONIBLE = False
 
-if GEMINI_API_KEY:
+_claves_gemini = leer_claves("GEMINI")
+if _claves_gemini:
     try:
         from google import genai
 
-        _cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
+        POOL_GEMINI = PoolClaves("Gemini", _claves_gemini, lambda k: genai.Client(api_key=k))
         GEMINI_DISPONIBLE = True
     except Exception:
         GEMINI_DISPONIBLE = False
 
-if GROQ_API_KEY:
+_claves_groq = leer_claves("GROQ")
+if _claves_groq:
     try:
         from groq import Groq
 
-        _cliente_groq = Groq(api_key=GROQ_API_KEY)
+        POOL_GROQ = PoolClaves("Groq", _claves_groq, lambda k: Groq(api_key=k))
         GROQ_DISPONIBLE = True
     except Exception:
         GROQ_DISPONIBLE = False
@@ -230,9 +234,8 @@ def generar_imagen_ia(prompt: str) -> bytes:
             detail="La generación de imágenes necesita Gemini configurado (Groq no genera imágenes).",
         )
     try:
-        respuesta = _cliente_gemini.models.generate_content(
-            model=GEMINI_IMAGE_MODEL,
-            contents=[prompt],
+        respuesta = POOL_GEMINI.ejecutar(
+            lambda cliente: cliente.models.generate_content(model=GEMINI_IMAGE_MODEL, contents=[prompt])
         )
         for parte in respuesta.candidates[0].content.parts:
             datos_inline = getattr(parte, "inline_data", None)
@@ -272,10 +275,12 @@ def generar_respuesta_ia(
                 )
             contenidos.append({"role": "user", "parts": partes_usuario})
 
-            respuesta = _cliente_gemini.models.generate_content(
-                model="gemini-flash-latest",
-                contents=contenidos,
-                config=types.GenerateContentConfig(system_instruction=INSTRUCCION_SISTEMA),
+            respuesta = POOL_GEMINI.ejecutar(
+                lambda cliente: cliente.models.generate_content(
+                    model="gemini-flash-latest",
+                    contents=contenidos,
+                    config=types.GenerateContentConfig(system_instruction=INSTRUCCION_SISTEMA),
+                )
             )
             return respuesta.text, "gemini"
         except Exception as error_gemini:
@@ -297,10 +302,12 @@ def generar_respuesta_ia(
                 )
             mensajes_groq.append({"role": "user", "content": texto_usuario})
 
-            respuesta_groq = _cliente_groq.chat.completions.create(
-                model=GROQ_CHAT_MODEL,
-                messages=mensajes_groq,
-                temperature=0.7,
+            respuesta_groq = POOL_GROQ.ejecutar(
+                lambda cliente: cliente.chat.completions.create(
+                    model=GROQ_CHAT_MODEL,
+                    messages=mensajes_groq,
+                    temperature=0.7,
+                )
             )
             return respuesta_groq.choices[0].message.content, "groq"
         except Exception as error_groq:
@@ -349,16 +356,21 @@ def generar_respuesta_ia_stream(
                 )
             contenidos.append({"role": "user", "parts": partes_usuario})
 
-            flujo = _cliente_gemini.models.generate_content_stream(
-                model="gemini-flash-latest",
-                contents=contenidos,
-                config=types.GenerateContentConfig(system_instruction=INSTRUCCION_SISTEMA),
-            )
-            for fragmento in flujo:
-                texto_pedazo = getattr(fragmento, "text", None)
-                if texto_pedazo:
-                    algo_enviado = True
-                    yield texto_pedazo, "gemini"
+            def _pedazos_gemini(cliente):
+                flujo = cliente.models.generate_content_stream(
+                    model="gemini-flash-latest",
+                    contents=contenidos,
+                    config=types.GenerateContentConfig(system_instruction=INSTRUCCION_SISTEMA),
+                )
+                for fragmento in flujo:
+                    texto_pedazo = getattr(fragmento, "text", None)
+                    if texto_pedazo:
+                        yield texto_pedazo
+
+            # El pool prueba otra clave si esta da 429 antes del primer pedazo.
+            for texto_pedazo, _i in POOL_GEMINI.ejecutar_stream(_pedazos_gemini):
+                algo_enviado = True
+                yield texto_pedazo, "gemini"
             if algo_enviado:
                 return
         except Exception as error_gemini:
@@ -383,16 +395,20 @@ def generar_respuesta_ia_stream(
                 )
             mensajes_groq.append({"role": "user", "content": texto_usuario})
 
-            flujo = _cliente_groq.chat.completions.create(
-                model=GROQ_CHAT_MODEL,
-                messages=mensajes_groq,
-                temperature=0.7,
-                stream=True,
-            )
-            for fragmento in flujo:
-                delta = fragmento.choices[0].delta.content
-                if delta:
-                    yield delta, "groq"
+            def _pedazos_groq(cliente):
+                flujo = cliente.chat.completions.create(
+                    model=GROQ_CHAT_MODEL,
+                    messages=mensajes_groq,
+                    temperature=0.7,
+                    stream=True,
+                )
+                for fragmento in flujo:
+                    delta = fragmento.choices[0].delta.content
+                    if delta:
+                        yield delta
+
+            for delta, _i in POOL_GROQ.ejecutar_stream(_pedazos_groq):
+                yield delta, "groq"
             return
         except Exception as error_groq:
             print(f"[CodIA] Error de Groq (stream): {error_groq}")
@@ -400,28 +416,6 @@ def generar_respuesta_ia_stream(
             return
 
     yield "No hay ninguna API de IA configurada. Revisa tu archivo .env", "error"
-
-
-
-    """Transcribe un audio a texto usando Whisper vía Groq. Se usa para la
-    entrada de voz: funciona en cualquier navegador (Brave, Firefox, Safari,
-    Chrome) porque solo graba el audio en el navegador y lo manda al
-    backend — no depende del servicio de voz de Google como sí depende la
-    API SpeechRecognition del navegador."""
-    if not GROQ_DISPONIBLE:
-        raise HTTPException(
-            status_code=503,
-            detail="La transcripción de voz necesita Groq configurado en el backend.",
-        )
-    try:
-        resultado = _cliente_groq.audio.transcriptions.create(
-            file=(nombre_archivo, datos_audio),
-            model=GROQ_WHISPER_MODEL,
-            language="es",
-        )
-        return resultado.text
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=traducir_error_ia(e))
 
 
 # =========================================================
@@ -558,6 +552,7 @@ def estado():
         "generar_imagenes_disponible": GEMINI_DISPONIBLE,
         "documentos_disponible": GEMINI_DISPONIBLE or GROQ_DISPONIBLE,
         "voz_disponible": GROQ_DISPONIBLE,
+        "claves": {"gemini": POOL_GEMINI.resumen(), "groq": POOL_GROQ.resumen()},
     }
 
 
@@ -839,10 +834,12 @@ def transcribir_audio_ia(datos_audio: bytes, nombre_archivo: str) -> str:
             detail="La transcripción de voz necesita Groq configurado en el backend.",
         )
     try:
-        resultado = _cliente_groq.audio.transcriptions.create(
-            file=(nombre_archivo, datos_audio),
-            model=GROQ_WHISPER_MODEL,
-            language="es",
+        resultado = POOL_GROQ.ejecutar(
+            lambda cliente: cliente.audio.transcriptions.create(
+                file=(nombre_archivo, datos_audio),
+                model=GROQ_WHISPER_MODEL,
+                language="es",
+            )
         )
         return resultado.text
     except Exception as e:
