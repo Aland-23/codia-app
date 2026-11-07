@@ -73,18 +73,34 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 #    puesta (por ejemplo, corriendo en tu compu), cae a un archivo SQLite
 #    local — el mismo código de SQLAlchemy funciona igual con ambas.
 # =========================================================
-DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{os.path.join(BASE_DIR, 'codia.db')}"
+def _limpiar_url_bd(valor: str) -> str:
+    """Tolera errores típicos al pegar la cadena de Neon: comillas, espacios,
+    el prefijo "psql " o "DATABASE_URL="."""
+    v = (valor or "").strip()
+    if v.lower().startswith("psql"):
+        v = v[4:].strip()
+    if v.upper().startswith("DATABASE_URL="):
+        v = v.split("=", 1)[1].strip()
+    return v.strip("'\"").strip()
+
+
+DATABASE_URL = _limpiar_url_bd(os.getenv("DATABASE_URL")) or f"sqlite:///{os.path.join(BASE_DIR, 'codia.db')}"
 
 # Render entrega la URL de Postgres con el prefijo "postgres://", pero
 # SQLAlchemy 2.x exige "postgresql://" — lo corregimos automáticamente.
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+# SQLAlchemy 2.1+ usa por defecto el driver "psycopg" (v3) para postgresql://,
+# pero nosotros instalamos psycopg2. Lo indicamos explícitamente para que
+# funcione con cualquier versión de SQLAlchemy.
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 _argumentos_conexion = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=_argumentos_conexion)
+# pool_pre_ping: Neon "duerme" la base tras unos minutos sin uso y cierra las
+# conexiones; esto comprueba la conexión antes de usarla y reconecta sola.
+engine = create_engine(DATABASE_URL, connect_args=_argumentos_conexion, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -228,28 +244,99 @@ def traducir_error_ia(error: Exception) -> str:
     return "No se pudo obtener respuesta de la IA en este momento. Intenta de nuevo en un momento."
 
 
-def generar_imagen_ia(prompt: str) -> bytes:
-    """Genera una imagen con Gemini a partir de una descripción en texto.
-    Lanza HTTPException si no hay proveedor de imágenes disponible."""
-    if not GEMINI_DISPONIBLE:
-        raise HTTPException(
-            status_code=503,
-            detail="La generación de imágenes necesita Gemini configurado (Groq no genera imágenes).",
-        )
-    try:
-        respuesta = POOL_GEMINI.ejecutar(
-            lambda cliente: cliente.models.generate_content(model=GEMINI_IMAGE_MODEL, contents=[prompt])
-        )
-        for parte in respuesta.candidates[0].content.parts:
-            datos_inline = getattr(parte, "inline_data", None)
-            if datos_inline and getattr(datos_inline, "data", None):
-                return datos_inline.data
-        raise ValueError("La respuesta de Gemini no incluyó ninguna imagen.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=traducir_error_ia(e))
+# ---------------------------------------------------------------------------
+# Generación de imágenes con varios proveedores y respaldo automático.
+# Los modelos de imagen de Gemini suelen NO tener cuota gratuita (error 429
+# aunque el chat funcione), así que CodIA prueba en orden y usa el primero
+# que responda. Orden por defecto: gemini -> huggingface -> pollinations.
+# Cambiar el orden: IMAGE_PROVIDERS=huggingface,pollinations,gemini
+# ---------------------------------------------------------------------------
+IMAGE_PROVIDERS = [p.strip().lower() for p in os.getenv("IMAGE_PROVIDERS", "gemini,huggingface,pollinations").split(",") if p.strip()]
+HF_API_TOKEN = (os.getenv("HF_API_TOKEN") or os.getenv("HF_TOKEN") or "").strip().strip('"').strip("'")
+HF_IMAGE_MODEL = os.getenv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
+POLLINATIONS_API_KEY = (os.getenv("POLLINATIONS_API_KEY") or "").strip().strip('"').strip("'")
+_pausa_imagen_gemini_hasta = 0.0  # si Gemini dio 429 de imágenes, no insistir un rato
 
+
+def _validar_respuesta_imagen(r, nombre: str) -> bytes:
+    if r.status_code != 200:
+        raise RuntimeError(f"{nombre} respondió {r.status_code}: {r.text[:200]}")
+    if not (r.headers.get("content-type", "").startswith("image/")) or len(r.content) < 1000:
+        raise RuntimeError(f"{nombre} no devolvió una imagen válida")
+    return r.content
+
+
+def _imagen_gemini(prompt: str) -> bytes:
+    # penalizar_claves=False: un 429 de IMÁGENES no debe poner en pausa las
+    # claves que siguen sirviendo bien para el chat.
+    respuesta = POOL_GEMINI.ejecutar(
+        lambda cliente: cliente.models.generate_content(model=GEMINI_IMAGE_MODEL, contents=[prompt]),
+        penalizar_claves=False,
+    )
+    for parte in respuesta.candidates[0].content.parts:
+        datos_inline = getattr(parte, "inline_data", None)
+        if datos_inline and getattr(datos_inline, "data", None):
+            return datos_inline.data
+    raise ValueError("La respuesta de Gemini no incluyó ninguna imagen.")
+
+
+def _imagen_huggingface(prompt: str) -> bytes:
+    r = requests.post(
+        f"https://router.huggingface.co/hf-inference/models/{HF_IMAGE_MODEL}",
+        headers={"Authorization": f"Bearer {HF_API_TOKEN}", "Accept": "image/png"},
+        json={"inputs": prompt},
+        timeout=120,
+    )
+    return _validar_respuesta_imagen(r, "Hugging Face")
+
+
+def _imagen_pollinations(prompt: str) -> bytes:
+    from urllib.parse import quote
+
+    url = "https://image.pollinations.ai/prompt/" + quote(prompt[:800]) + "?width=1024&height=1024&nologo=true&model=flux"
+    cabeceras = {"Authorization": f"Bearer {POLLINATIONS_API_KEY}"} if POLLINATIONS_API_KEY else {}
+    r = requests.get(url, headers=cabeceras, timeout=120)
+    return _validar_respuesta_imagen(r, "Pollinations")
+
+
+def generar_imagen_ia(prompt: str) -> bytes:
+    """Genera una imagen probando los proveedores en orden (IMAGE_PROVIDERS).
+    Devuelve los bytes de la imagen o lanza HTTPException con un mensaje claro."""
+    global _pausa_imagen_gemini_hasta
+    import time
+
+    fallos = []
+    for nombre in IMAGE_PROVIDERS:
+        try:
+            if nombre == "gemini":
+                if not GEMINI_DISPONIBLE or time.time() < _pausa_imagen_gemini_hasta:
+                    continue
+                try:
+                    return _imagen_gemini(prompt)
+                except Exception as e:
+                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "quota" in str(e).lower():
+                        _pausa_imagen_gemini_hasta = time.time() + 1800  # 30 min sin insistir
+                    raise
+            elif nombre == "huggingface":
+                if not HF_API_TOKEN:
+                    continue
+                return _imagen_huggingface(prompt)
+            elif nombre == "pollinations":
+                return _imagen_pollinations(prompt)
+        except Exception as e:  # noqa: BLE001
+            fallos.append(nombre)
+            print(f"[CodIA] imágenes: {nombre} falló -> {str(e)[:300]}", flush=True)
+
+    if not fallos:
+        raise HTTPException(status_code=503, detail="No hay ningún proveedor de imágenes configurado.")
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            "No se pudo generar la imagen ahora mismo (los servicios gratuitos de imágenes están "
+            "ocupados o sin cupo). Inténtalo de nuevo en unos minutos. "
+            f"Probé con: {', '.join(fallos)}."
+        ),
+    )
 
 
 def generar_respuesta_ia(
