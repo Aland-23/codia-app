@@ -300,7 +300,7 @@ def traducir_error_ia(error: Exception) -> str:
 # que responda. Orden por defecto: gemini -> huggingface -> pollinations.
 # Cambiar el orden: IMAGE_PROVIDERS=huggingface,pollinations,gemini
 # ---------------------------------------------------------------------------
-IMAGE_PROVIDERS = [p.strip().lower() for p in os.getenv("IMAGE_PROVIDERS", "gemini,huggingface,pollinations").split(",") if p.strip()]
+IMAGE_PROVIDERS = [p.strip().lower() for p in os.getenv("IMAGE_PROVIDERS", "gemini,cloudflare,huggingface,pollinations").split(",") if p.strip()]
 HF_API_TOKEN = (os.getenv("HF_API_TOKEN") or os.getenv("HF_TOKEN") or "").strip().strip('"').strip("'")
 HF_IMAGE_MODEL = os.getenv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
 POLLINATIONS_API_KEY = (os.getenv("POLLINATIONS_API_KEY") or "").strip().strip('"').strip("'")
@@ -327,6 +327,31 @@ def _imagen_gemini(prompt: str) -> bytes:
         if datos_inline and getattr(datos_inline, "data", None):
             return datos_inline.data
     raise ValueError("La respuesta de Gemini no incluyó ninguna imagen.")
+
+
+CLOUDFLARE_ACCOUNT_ID = (os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip().strip('"').strip("'")
+CLOUDFLARE_API_TOKEN = (os.getenv("CLOUDFLARE_API_TOKEN") or "").strip().strip('"').strip("'")
+CLOUDFLARE_IMAGE_MODEL = os.getenv("CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell")
+
+
+def _imagen_cloudflare(prompt: str) -> bytes:
+    """FLUX.1-schnell en Cloudflare Workers AI (cupo gratuito diario)."""
+    import base64
+
+    r = requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_IMAGE_MODEL}",
+        headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"},
+        json={"prompt": prompt[:2000], "steps": 6},
+        timeout=120,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"Cloudflare respondió {r.status_code}: {r.text[:200]}")
+    if r.headers.get("content-type", "").startswith("image/"):
+        return r.content
+    b64 = (r.json().get("result") or {}).get("image")
+    if not b64:
+        raise RuntimeError(f"Cloudflare no devolvió imagen: {r.text[:200]}")
+    return base64.b64decode(b64)
 
 
 def _imagen_huggingface(prompt: str) -> bytes:
@@ -401,6 +426,10 @@ def generar_imagen_ia(prompt: str) -> bytes:
                     if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "quota" in str(e).lower():
                         _pausa_imagen_gemini_hasta = time.time() + 1800  # 30 min sin insistir
                     raise
+            elif nombre == "cloudflare":
+                if not (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN):
+                    continue
+                return _imagen_cloudflare(prompt)
             elif nombre == "huggingface":
                 if not HF_API_TOKEN:
                     continue
