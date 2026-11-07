@@ -537,6 +537,29 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     :root[data-tema="claro"] body { background:
         radial-gradient(60% 55% at 12% 8%, rgba(var(--g1-rgb),0.14), transparent 70%),
         radial-gradient(55% 50% at 92% 92%, rgba(var(--acento2-rgb),0.12), transparent 70%), var(--s0); }
+        /* ===== Markdown: títulos, listas, tablas, citas ===== */
+    .message .md { display: block; }
+    .message .md > * + * { margin-top: 10px; }
+    .message .md p { margin-bottom: 0; }
+    .message .md-titulo { font-weight: 700; line-height: 1.3; color: var(--texto-fuerte); margin-top: 14px; }
+    .message .md > .md-titulo:first-child { margin-top: 0; }
+    .message .md h2 { font-size: 1.22em; }
+    .message .md h3 { font-size: 1.1em; }
+    .message .md h4, .message .md h5 { font-size: 1.02em; color: var(--acento-claro); }
+    .message .md-lista { padding-left: 22px; }
+    .message .md-lista li { margin: 3px 0; padding-left: 2px; }
+    .message .md-lista li::marker { color: var(--acento); }
+    .message .md blockquote { border-left: 3px solid var(--acento); background: rgba(var(--acento-rgb),0.08); padding: 8px 12px; border-radius: 0 10px 10px 0; color: var(--texto); }
+    .message .md hr { border: 0; height: 1px; background: rgba(var(--tinta),0.14); margin: 14px 0; }
+    .message .md em { font-style: italic; color: var(--acento-claro); }
+    .message .md .tabla-wrap { overflow-x: auto; border: 1px solid rgba(var(--tinta),0.12); border-radius: 12px; background: rgba(var(--tinta),0.03); }
+    .message .md table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
+    .message .md th, .message .md td { padding: 9px 13px; text-align: left; vertical-align: top; border-bottom: 1px solid rgba(var(--tinta),0.09); white-space: normal; }
+    .message .md th { background: rgba(var(--acento-rgb),0.14); color: var(--texto-fuerte); font-weight: 700; white-space: nowrap; }
+    .message .md tbody tr:last-child td { border-bottom: 0; }
+    .message .md tbody tr:nth-child(even) td { background: rgba(var(--tinta),0.025); }
+    .message .md td:first-child { font-weight: 600; white-space: nowrap; }
+    .message .md table { min-width: 460px; }
     /* selector de tema */
     .selector-tema { position:relative; }
     .btn-tema { background:rgba(var(--tinta),0.06); border:1px solid rgba(var(--tinta),0.12); color:var(--texto); border-radius:999px; padding:7px 12px; cursor:pointer; font-size:13px; transition:transform .2s var(--resorte), background .2s; }
@@ -1200,32 +1223,33 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     // damos a la animación un retraso NEGATIVO igual a su edad: así continúa
     // justo donde iba, sin reiniciarse ni parpadear.
     const DURACION_PALABRA = 650;
-    function escribirTextoEnLinea(p, texto, animar) {
-        const ahora = performance.now();
-        const marcas = p._marcas || (p._marcas = []);
-        if (marcas.length > texto.length) marcas.length = texto.length;
-        while (marcas.length < texto.length) marcas.push(animar ? ahora : -1e9);
 
-        const frag = document.createDocumentFragment();
+    // Escribe texto con formato en línea (`código`, **negrita**, *cursiva*, <br>)
+    // DENTRO de `el`. `base` es la posición de este texto dentro del segmento
+    // completo, para reutilizar las marcas de tiempo de cada letra.
+    const PARTES_EN_LINEA = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\s\n][^*\n]*\*|<br\s*\/?>)/i;
+    function escribirEnLinea(el, texto, base, marcas, ahora) {
         let buffer = '';
-        const volcar = () => { if (buffer) { frag.appendChild(document.createTextNode(buffer)); buffer = ''; } };
-        const animarNodo = (el, edad) => { el.classList.add('palabra'); el.style.animationDelay = (-edad) + 'ms'; };
-        let desplazamiento = 0;
+        const volcar = () => { if (buffer) { el.appendChild(document.createTextNode(buffer)); buffer = ''; } };
+        const animarNodo = (nodo, edad) => { nodo.classList.add('palabra'); nodo.style.animationDelay = (-edad) + 'ms'; };
+        let desplazamiento = base;
 
-        texto.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).forEach((trozo) => {
+        texto.split(PARTES_EN_LINEA).forEach((trozo) => {
             if (!trozo) return;
             const inicio = desplazamiento;
             desplazamiento += trozo.length;
+            if (/^<br\s*\/?>$/i.test(trozo)) { volcar(); el.appendChild(document.createElement('br')); return; }
             const esCodigo = trozo.length > 2 && trozo[0] === '`' && trozo[trozo.length - 1] === '`';
             const esNegrita = trozo.length > 4 && trozo.startsWith('**') && trozo.endsWith('**');
-            if (esCodigo || esNegrita) {
+            const esCursiva = !esNegrita && trozo.length > 2 && trozo[0] === '*' && trozo[trozo.length - 1] === '*';
+            if (esCodigo || esNegrita || esCursiva) {
                 volcar();
-                const el = document.createElement(esCodigo ? 'code' : 'strong');
-                if (esCodigo) el.className = 'inline';
-                el.textContent = esCodigo ? trozo.slice(1, -1) : trozo.slice(2, -2);
+                const nodo = document.createElement(esCodigo ? 'code' : esNegrita ? 'strong' : 'em');
+                if (esCodigo) nodo.className = 'inline';
+                nodo.textContent = esCodigo ? trozo.slice(1, -1) : esNegrita ? trozo.slice(2, -2) : trozo.slice(1, -1);
                 const edad = ahora - marcas[inicio];
-                if (edad < DURACION_PALABRA) animarNodo(el, edad);
-                frag.appendChild(el);
+                if (edad < DURACION_PALABRA) animarNodo(nodo, edad);
+                el.appendChild(nodo);
                 return;
             }
             let pos = inicio;
@@ -1238,11 +1262,162 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
                 const sp = document.createElement('span');
                 sp.textContent = w;
                 animarNodo(sp, edad);
-                frag.appendChild(sp);
+                el.appendChild(sp);
             });
         });
         volcar();
-        p.replaceChildren(frag);
+    }
+
+    // ---- Markdown por bloques: títulos, listas, tablas, citas y párrafos ----
+    const RE_TITULO = /^(#{1,6})\s+(.*)$/;
+    const RE_LISTA = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+    const RE_SEP_TABLA = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+    const RE_HR = /^\s*([-*_])(\s*\1){2,}\s*$/;
+    const RE_CITA = /^>\s?(.*)$/;
+
+    function celdasDeFila(linea, desde) {
+        const celdas = [];
+        let ini = 0;
+        let fin = linea.length;
+        if (linea.trim().startsWith('|')) ini = linea.indexOf('|') + 1;
+        if (linea.trim().endsWith('|') && linea.lastIndexOf('|') >= ini) fin = linea.lastIndexOf('|');
+        let k = ini;
+        while (k <= fin) {
+            let sig = linea.indexOf('|', k);
+            if (sig === -1 || sig > fin) sig = fin;
+            const crudo = linea.slice(k, sig);
+            const lead = crudo.length - crudo.replace(/^\s+/, '').length;
+            celdas.push({ c: crudo.trim(), o: desde + k + lead });
+            k = sig + 1;
+        }
+        return celdas;
+    }
+
+    function parsearMarkdown(texto) {
+        const lineas = [];
+        let pos = 0;
+        texto.split('\n').forEach((l) => { lineas.push({ s: l, o: pos }); pos += l.length + 1; });
+        const bloques = [];
+        const esInicioDeBloque = (k) => {
+            const l = lineas[k];
+            if (!l) return false;
+            if (!l.s.trim()) return true;
+            if (RE_TITULO.test(l.s) || RE_HR.test(l.s) || RE_CITA.test(l.s)) return true;
+            if (RE_LISTA.test(l.s)) return true;
+            if (l.s.includes('|') && lineas[k + 1] && RE_SEP_TABLA.test(lineas[k + 1].s) && lineas[k + 1].s.includes('-')) return true;
+            return false;
+        };
+        let i = 0;
+        while (i < lineas.length) {
+            const { s, o } = lineas[i];
+            if (!s.trim()) { i++; continue; }
+            let m;
+            if ((m = RE_TITULO.exec(s))) {
+                bloques.push({ t: 'h', n: Math.min(m[1].length, 4), c: m[2].trim(), o: o + s.length - m[2].length });
+                i++; continue;
+            }
+            if (RE_HR.test(s)) { bloques.push({ t: 'hr' }); i++; continue; }
+            if (s.includes('|') && lineas[i + 1] && RE_SEP_TABLA.test(lineas[i + 1].s) && lineas[i + 1].s.includes('-')) {
+                const cab = celdasDeFila(s, o);
+                const filas = [];
+                let k = i + 2;
+                while (k < lineas.length && lineas[k].s.trim() && lineas[k].s.includes('|')) {
+                    filas.push(celdasDeFila(lineas[k].s, lineas[k].o));
+                    k++;
+                }
+                bloques.push({ t: 'tabla', cab, filas });
+                i = k; continue;
+            }
+            if ((m = RE_LISTA.exec(s))) {
+                const items = [];
+                const ordenada = /\d/.test(m[2]);
+                let k = i;
+                while (k < lineas.length && (m = RE_LISTA.exec(lineas[k].s))) {
+                    items.push({ c: m[3], o: lineas[k].o + lineas[k].s.length - m[3].length, nivel: Math.min(3, Math.floor(m[1].replace(/\t/g, '  ').length / 2)) });
+                    k++;
+                }
+                bloques.push({ t: 'lista', ordenada, items });
+                i = k; continue;
+            }
+            if (RE_CITA.test(s)) {
+                const partes = [];
+                let k = i;
+                while (k < lineas.length && (m = RE_CITA.exec(lineas[k].s))) {
+                    partes.push({ c: m[1], o: lineas[k].o + lineas[k].s.length - m[1].length });
+                    k++;
+                }
+                bloques.push({ t: 'cita', partes });
+                i = k; continue;
+            }
+            // párrafo: hasta una línea en blanco u otro tipo de bloque
+            let k = i + 1;
+            while (k < lineas.length && !esInicioDeBloque(k)) k++;
+            const ultima = lineas[k - 1];
+            bloques.push({ t: 'p', c: texto.slice(o, ultima.o + ultima.s.length), o });
+            i = k;
+        }
+        return bloques;
+    }
+
+    function escribirTextoEnLinea(cont, texto, animar) {
+        const ahora = performance.now();
+        const marcas = cont._marcas || (cont._marcas = []);
+        if (marcas.length > texto.length) marcas.length = texto.length;
+        while (marcas.length < texto.length) marcas.push(animar ? ahora : -1e9);
+
+        const frag = document.createDocumentFragment();
+        const en = (el, c, o) => { escribirEnLinea(el, c, o, marcas, ahora); return el; };
+        parsearMarkdown(texto).forEach((b) => {
+            if (b.t === 'h') {
+                frag.appendChild(en(document.createElement('h' + (b.n + 1 > 5 ? 5 : b.n + 1)), b.c, b.o)).classList.add('md-titulo');
+            } else if (b.t === 'hr') {
+                frag.appendChild(document.createElement('hr'));
+            } else if (b.t === 'p') {
+                frag.appendChild(en(document.createElement('p'), b.c, b.o));
+            } else if (b.t === 'lista') {
+                const lista = document.createElement(b.ordenada ? 'ol' : 'ul');
+                lista.className = 'md-lista';
+                b.items.forEach((it) => {
+                    const li = document.createElement('li');
+                    if (it.nivel) li.style.marginLeft = (it.nivel * 18) + 'px';
+                    lista.appendChild(en(li, it.c, it.o));
+                });
+                frag.appendChild(lista);
+            } else if (b.t === 'cita') {
+                const q = document.createElement('blockquote');
+                b.partes.forEach((pt, idx) => { if (idx) q.appendChild(document.createElement('br')); en(q, pt.c, pt.o); });
+                frag.appendChild(q);
+            } else if (b.t === 'tabla') {
+                const envoltorio = document.createElement('div');
+                envoltorio.className = 'tabla-wrap';
+                const tabla = document.createElement('table');
+                const thead = document.createElement('thead');
+                const trh = document.createElement('tr');
+                b.cab.forEach((c) => trh.appendChild(en(document.createElement('th'), c.c, c.o)));
+                thead.appendChild(trh);
+                tabla.appendChild(thead);
+                const tbody = document.createElement('tbody');
+                b.filas.forEach((fila) => {
+                    const tr = document.createElement('tr');
+                    for (let k = 0; k < b.cab.length; k++) {
+                        const c = fila[k];
+                        tr.appendChild(c ? en(document.createElement('td'), c.c, c.o) : document.createElement('td'));
+                    }
+                    tbody.appendChild(tr);
+                });
+                tabla.appendChild(tbody);
+                envoltorio.appendChild(tabla);
+                frag.appendChild(envoltorio);
+            }
+        });
+        cont.replaceChildren(frag);
+    }
+
+    // Último elemento de texto donde colocar el cursor luminoso
+    function hojaDeTexto(el) {
+        let x = el;
+        while (x.lastElementChild && x.lastElementChild.matches('p,ul,ol,li,table,tbody,thead,tr,td,th,blockquote,h2,h3,h4,h5,div.tabla-wrap')) x = x.lastElementChild;
+        return x;
     }
 
     function crearRenderizador(contenedor, animarBloques) {
@@ -1255,7 +1430,8 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
         function crearNodo(seg) {
             let nodo;
             if (seg.t === 'texto') {
-                const p = document.createElement('p');
+                const p = document.createElement('div');
+                p.className = 'md';
                 nodo = { clave: 'texto', el: p, ultimo: null, ancla: p };
             } else if (seg.lang === 'mermaid') {
                 const div = document.createElement('div');
@@ -1306,7 +1482,7 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
                 cursor.remove();
                 if (!final) {
                     for (let k = nodos.length - 1; k >= 0; k--) {
-                        if (nodos[k].ancla) { nodos[k].ancla.appendChild(cursor); break; }
+                        if (nodos[k].ancla) { (nodos[k].clave === 'texto' ? hojaDeTexto(nodos[k].el) : nodos[k].ancla).appendChild(cursor); break; }
                     }
                 }
             },
