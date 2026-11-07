@@ -548,6 +548,7 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     .message .md h4, .message .md h5 { font-size: 1.02em; color: var(--acento-claro); }
     .message .md-lista { padding-left: 22px; }
     .message .md-lista li { margin: 3px 0; padding-left: 2px; }
+    .message .md-lista .md-lista { margin-top: 4px; }
     .message .md-lista li::marker { color: var(--acento); }
     .message .md blockquote { border-left: 3px solid var(--acento); background: rgba(var(--acento-rgb),0.08); padding: 8px 12px; border-radius: 0 10px 10px 0; color: var(--texto); }
     .message .md hr { border: 0; height: 1px; background: rgba(var(--tinta),0.14); margin: 14px 0; }
@@ -1330,13 +1331,24 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             }
             if ((m = RE_LISTA.exec(s))) {
                 const items = [];
-                const ordenada = /\d/.test(m[2]);
                 let k = i;
-                while (k < lineas.length && (m = RE_LISTA.exec(lineas[k].s))) {
-                    items.push({ c: m[3], o: lineas[k].o + lineas[k].s.length - m[3].length, nivel: Math.min(3, Math.floor(m[1].replace(/\t/g, '  ').length / 2)) });
+                while (k < lineas.length) {
+                    let mm = RE_LISTA.exec(lineas[k].s);
+                    if (!mm) {
+                        // una línea en blanco no corta la lista si después sigue otro elemento
+                        let j = k;
+                        while (j < lineas.length && !lineas[j].s.trim()) j++;
+                        if (j > k && j < lineas.length && RE_LISTA.exec(lineas[j].s)) { k = j; continue; }
+                        break;
+                    }
+                    items.push({
+                        c: mm[3], o: lineas[k].o + lineas[k].s.length - mm[3].length,
+                        ind: mm[1].replace(/\t/g, '    ').length,
+                        ord: /\d/.test(mm[2]), num: parseInt(mm[2], 10) || 1,
+                    });
                     k++;
                 }
-                bloques.push({ t: 'lista', ordenada, items });
+                bloques.push({ t: 'lista', items });
                 i = k; continue;
             }
             if (RE_CITA.test(s)) {
@@ -1375,14 +1387,23 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             } else if (b.t === 'p') {
                 frag.appendChild(en(document.createElement('p'), b.c, b.o));
             } else if (b.t === 'lista') {
-                const lista = document.createElement(b.ordenada ? 'ol' : 'ul');
-                lista.className = 'md-lista';
+                const pila = []; // { ind, ord, el }
                 b.items.forEach((it) => {
+                    while (pila.length && pila[pila.length - 1].ind > it.ind) pila.pop();
+                    let tope = pila[pila.length - 1];
+                    if (tope && tope.ind === it.ind && tope.ord !== it.ord) { pila.pop(); tope = pila[pila.length - 1]; }
+                    if (!tope || tope.ind < it.ind) {
+                        const el = document.createElement(it.ord ? 'ol' : 'ul');
+                        el.className = 'md-lista';
+                        if (tope && tope.el.lastElementChild) tope.el.lastElementChild.appendChild(el);
+                        else frag.appendChild(el);
+                        tope = { ind: it.ind, ord: it.ord, el };
+                        pila.push(tope);
+                    }
                     const li = document.createElement('li');
-                    if (it.nivel) li.style.marginLeft = (it.nivel * 18) + 'px';
-                    lista.appendChild(en(li, it.c, it.o));
+                    if (it.ord) li.value = it.num;
+                    tope.el.appendChild(en(li, it.c, it.o));
                 });
-                frag.appendChild(lista);
             } else if (b.t === 'cita') {
                 const q = document.createElement('blockquote');
                 b.partes.forEach((pt, idx) => { if (idx) q.appendChild(document.createElement('br')); en(q, pt.c, pt.o); });
