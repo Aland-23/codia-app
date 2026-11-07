@@ -618,11 +618,6 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
         <div class="chat-messages" id="chatMessages"></div>
         <button class="btn-bajar" id="btnBajar" aria-label="Ir al final">↓</button>
 
-        <div class="barra-modo" id="barraModoImagen">
-            🎨 Modo generar imagen: escribe una descripción y presiona enviar
-            <button id="btnCancelarModoImagen">Cancelar</button>
-        </div>
-
         <div class="barra-grabando" id="barraGrabando">
             <span class="punto"></span> <span id="textoGrabando">Grabando audio…</span> <span class="nivel"><i id="nivelMic"></i></span>
             <button id="btnDetenerGrabacion">⏹ Detener y transcribir</button>
@@ -639,12 +634,11 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
           <div class="composer">
             <button class="btn-icono" id="btnAdjuntarImagen" title="Adjuntar imagen">📎</button>
             <button class="btn-icono" id="btnAdjuntarDocumento" title="Adjuntar PDF/Word">📄</button>
-            <button class="btn-icono" id="btnModoImagen" title="Generar una imagen">🎨</button>
             <button class="btn-icono" id="btnMicrofono" title="Grabar audio y transcribirlo">🎤</button>
             <button class="btn-icono btn-mic-menu" id="btnElegirMic" title="Elegir micrófono" aria-label="Elegir micrófono" aria-haspopup="true">▾</button>
             <input type="file" id="inputImagen" accept="image/*" hidden>
             <input type="file" id="inputDocumento" accept=".pdf,.docx" hidden>
-            <input type="text" id="userInput" placeholder="Escribe tu mensaje..." autocomplete="off">
+            <input type="text" id="userInput" placeholder="Escribe tu mensaje… o pídeme una imagen" autocomplete="off">
             <button class="enviar" id="sendBtn" aria-label="Enviar">
                 <span>Enviar</span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -685,9 +679,6 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     const previewAdjuntoNombre = document.getElementById('previewAdjuntoNombre');
     const btnQuitarAdjunto = document.getElementById('btnQuitarAdjunto');
     const btnNuevoChat = document.getElementById('btnNuevoChat');
-    const btnModoImagen = document.getElementById('btnModoImagen');
-    const barraModoImagen = document.getElementById('barraModoImagen');
-    const btnCancelarModoImagen = document.getElementById('btnCancelarModoImagen');
     const btnMicrofono = document.getElementById('btnMicrofono');
     const toggleVoz = document.getElementById('toggleVoz');
     const btnBajar = document.getElementById('btnBajar');
@@ -697,7 +688,6 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     let conversacionActualId = null;
     let imagenPendiente = null;
     let documentoPendiente = null;
-    let modoGenerarImagen = false;
     let vozActiva = false;
     let capacidades = {};
     let contadorDiagramas = 0;
@@ -963,8 +953,7 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             } catch (e) {
                 alert(e.message);
             } finally {
-                userInput.placeholder = 'Escribe tu mensaje...';
-            }
+                    }
         };
         lector.readAsDataURL(blobAudio);
     }
@@ -982,7 +971,6 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             capacidades = await res.json();
             btnAdjuntarImagen.style.display = capacidades.imagenes_disponible ? 'block' : 'none';
             btnAdjuntarDocumento.style.display = capacidades.documentos_disponible ? 'block' : 'none';
-            btnModoImagen.style.display = capacidades.generar_imagenes_disponible ? 'block' : 'none';
             const soportaGrabacion = !!(navigator.mediaDevices && window.MediaRecorder);
             btnMicrofono.style.display = (capacidades.voz_disponible && soportaGrabacion) ? 'block' : 'none';
             btnElegirMic.style.display = btnMicrofono.style.display;
@@ -1096,10 +1084,8 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             b.append(t, d);
             b.addEventListener('click', () => {
                 if (sg.accion === 'imagen') {
-                    if (btnModoImagen.style.display === 'none') { userInput.value = 'Describe una imagen: un robot programando en un cuarto oscuro'; userInput.focus(); return; }
-                    btnModoImagen.click();
-                    userInput.value = 'un robot programando en un cuarto oscuro, estilo digital';
-                    userInput.focus();
+                    userInput.value = 'Genera una imagen de un robot programando en un cuarto oscuro, estilo digital';
+                    enviarMensaje();
                 } else { userInput.value = sg.texto; enviarMensaje(); }
             });
             rejilla.appendChild(b);
@@ -1890,21 +1876,42 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
         previewAdjunto.style.display = 'none';
     });
 
-    // ===== Modo generar imagen =====
-    btnModoImagen.addEventListener('click', () => {
-        modoGenerarImagen = true;
-        btnModoImagen.classList.add('activo');
-        mostrarBarra(barraModoImagen, true);
-        userInput.placeholder = 'Describe la imagen que quieres generar...';
-        userInput.focus();
-    });
-    function salirModoImagen() {
-        modoGenerarImagen = false;
-        btnModoImagen.classList.remove('activo');
-        barraModoImagen.style.display = 'none';
-        userInput.placeholder = 'Escribe tu mensaje...';
+    // ===== Generar imágenes pidiéndolo con palabras (sin botón) =====
+    // Detecta frases como "genera una imagen de un gato" o "dibújame un dragón".
+    // Se evita confundirlas con preguntas de programación ("cómo genero una imagen en Python").
+    const VERBOS_IMAGEN = 'genera|generame|genérame|generar|crea|creame|créame|crear|dibuja|dibujame|dibújame|dibujar|pinta|píntame|pintame|diseña|diseñame|hazme|haz|hacer|dame|quiero|necesito|muestrame|muéstrame|imagina|ilustra|renderiza';
+    const OBJETOS_IMAGEN = 'imagen|imágen|imagenes|imágenes|foto|fotografía|fotografia|dibujo|ilustración|ilustracion|logo|logotipo|póster|poster|retrato|avatar|wallpaper|fondo de pantalla|pintura|caricatura|sticker|portada';
+    const RE_PIDE_IMAGEN = new RegExp(
+        '^(?:(?:oye|hola|ey|por favor|porfa|codia|ahora|y)[,\\s]+)*(?:' + VERBOS_IMAGEN + ')(?:\\s+[\\p{L}]+){0,3}?\\s+(?:una?\\s+|unas?\\s+|el\\s+|la\\s+|mi\\s+)?(?:' + OBJETOS_IMAGEN + ')(?![\\p{L}])', 'iu');
+    const RE_IMAGEN_DIRECTA = /^(?:una?\s+)?(?:imagen|imágen|foto|dibujo|ilustración|ilustracion)\s+(?:de|del)\s+\S/iu;
+    const RE_DIBUJA = /^(?:(?:oye|hola|por favor|porfa|codia)[,\s]+)*(?:dibuja|dibújame|dibujame|píntame|pintame|pinta|ilustra)\s+\S/iu;
+    const RE_NO_ES_IMAGEN = /(c[oó]digo|programa|script|python|javascript|java\b|html|css|c\+\+|funci[oó]n|\bapi\b|librer[ií]a|biblioteca|canvas|turtle|matplotlib|pillow|opencv|c[oó]mo (se|puedo|hago|genero|creo|dibujo)|expl[ií]ca|qu[eé] es)/iu;
+    function pideImagen(texto) {
+        if (!capacidades || !capacidades.generar_imagenes_disponible) return false;
+        if (imagenPendiente || documentoPendiente) return false;
+        const t = texto.trim();
+        if (t.length < 6 || t.length > 600) return false;
+        if (RE_NO_ES_IMAGEN.test(t)) return false;
+        return RE_PIDE_IMAGEN.test(t) || RE_IMAGEN_DIRECTA.test(t) || RE_DIBUJA.test(t);
     }
-    btnCancelarModoImagen.addEventListener('click', salirModoImagen);
+    // Devuelve lo que hay que dibujar ('' si la persona no dijo qué).
+    function extraerDescripcionImagen(texto) {
+        const t = texto.trim();
+        const m = RE_PIDE_IMAGEN.exec(t);
+        let d = t;
+        if (m && /(imagen|imágen|imagenes|imágenes|foto|fotografía|fotografia|dibujo|ilustración|ilustracion)\s*$/iu.test(m[0])) {
+            d = t.slice(m[0].length);                    // "genera una imagen de un gato" -> "de un gato"
+        } else if (!m && RE_IMAGEN_DIRECTA.test(t)) {
+            d = t.replace(/^(?:una?\s+)?(?:imagen|imágen|foto|dibujo|ilustración|ilustracion)\s+/iu, '');
+        } else if (RE_DIBUJA.test(t)) {
+            d = t.replace(/^(?:(?:oye|hola|por favor|porfa|codia)[,\s]+)*(?:dibuja|dibújame|dibujame|píntame|pintame|pinta|ilustra)\s+/iu, '');
+        } else {
+            return t;                                    // logo, póster...: se conserva el pedido completo
+        }
+        d = d.replace(/^[\s,:;.-]*(?:de|del|que|con|sobre|donde|en la que|en el que)?\s+(?:una?\s+|el\s+|la\s+)?/iu, '').trim();
+        return d.length < 3 ? '' : d.replace(/[.\s]+$/, '');
+    }
+    function salirModoImagen() {}
 
     async function generarImagen(prompt) {
         agregarMensajeUsuario(`🎨 Genera una imagen: ${prompt}`);
@@ -2040,7 +2047,16 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             catch (e) { userInput.value = texto; sendBtn.disabled = false; mostrarError('El servidor sigue despertando. Intenta de nuevo en unos segundos.'); return; }
             sendBtn.disabled = false;
         }
-        if (modoGenerarImagen) { generarImagen(texto); return; }
+        if (pideImagen(texto)) {
+            const descripcion = extraerDescripcionImagen(texto);
+            if (!descripcion) {
+                agregarMensajeUsuario(texto);
+                agregarMensajeIA('¡Claro! ¿Qué quieres que dibuje? Cuéntame el tema y, si quieres, el estilo o los colores. Por ejemplo: "un gato astronauta en la luna, estilo caricatura".', null, { escribir: true });
+                return;
+            }
+            generarImagen(descripcion);
+            return;
+        }
         enviarMensajeInterno(texto, texto);
     }
 
