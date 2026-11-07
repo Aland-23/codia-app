@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>CodIA - Asistente de Programación</title>
+<title>CodIA - Asistente Inteligente</title>
 <meta name="theme-color" content="#0b0d13">
 <script>
 (function(){try{var t=localStorage.getItem('codia_tema')||'auto';
 if(t==='auto')t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'claro':'oscuro';
 document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
 </script>
-<meta name="description" content="CodIA, asistente de programación - Proyecto de grado">
+<meta name="description" content="CodIA, asistente inteligente (experto en programación) - Proyecto de grado">
 
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -597,7 +597,7 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             <svg class="logo-header" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f6bff"/><stop offset="1" stop-color="#9a5cff"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="18" fill="url(#gl)"/><text x="32" y="40" font-family="JetBrains Mono, Consolas, monospace" font-size="21" font-weight="bold" text-anchor="middle" fill="#ffffff">&lt;/&gt;</text></svg>
             <div class="titulos">
                 <span class="nombre">CodIA</span>
-                <span class="subtitulo">Asistente de Programación · Proyecto de Grado</span>
+                <span class="subtitulo">Asistente inteligente · Proyecto de Grado</span>
             </div>
             <div id="estadoConexion" class="estado-conexion aviso">Conectando…</div>
             <button class="toggle-voz" id="toggleVoz" title="Leer las respuestas en voz alta">🔊 Voz</button>
@@ -1054,9 +1054,9 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     }
 
     const SUGERENCIAS = [
-        { icono: '💡', titulo: 'Explícame un concepto', detalle: 'Qué es la recursividad, con un ejemplo', texto: 'Explícame qué es la recursividad con un ejemplo sencillo en Python' },
+        { icono: '💡', titulo: 'Explícame algo', detalle: 'Qué es la fotosíntesis, con una analogía', texto: 'Explícame qué es la fotosíntesis con una analogía sencilla' },
         { icono: '🐛', titulo: 'Encuentra un error', detalle: 'Pega tu código y lo corregimos juntos', texto: 'Voy a pegarte un código con un error para que me ayudes a encontrarlo y corregirlo. ¿Listo?' },
-        { icono: '🧩', titulo: 'Hazme un diagrama', detalle: 'Un diagrama de flujo de un inicio de sesión', texto: 'Hazme un diagrama de flujo (mermaid) de cómo funciona un inicio de sesión' },
+        { icono: '🧠', titulo: 'Hazme un mapa mental', detalle: 'Un organizador gráfico del sistema solar', texto: 'Hazme un mapa mental del sistema solar' },
         { icono: '🎨', titulo: 'Genera una imagen', detalle: 'Un robot programando en un cuarto oscuro', accion: 'imagen' },
     ];
 
@@ -1074,7 +1074,7 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             sp.className = 'pal'; sp.textContent = palabra; sp.style.animationDelay = (0.25 + k * 0.11) + 's';
             h1.appendChild(sp);
         });
-        const p = document.createElement('p'); p.textContent = 'Soy CodIA, tu asistente de programación. Pregúntame, pega código para depurarlo o pídeme una imagen.';
+        const p = document.createElement('p'); p.textContent = 'Soy CodIA, tu asistente inteligente: experto en programación, pero puedo ayudarte con cualquier tema. Pregúntame, pega código para depurarlo o pídeme una imagen.';
         const rejilla = document.createElement('div'); rejilla.className = 'sugerencias';
         SUGERENCIAS.forEach((sg, i) => {
             const b = document.createElement('button');
