@@ -472,6 +472,25 @@
     @keyframes heroPalabra { from { opacity: 0; transform: translateY(18px) scale(0.92); filter: blur(8px); } to { opacity: 1; transform: none; filter: blur(0); } }
     .hero h1 { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: #fff; }
 
+
+    /* Selector de micrófono */
+    .chat-input { position: relative; }
+    .composer .btn-mic-menu { width: 22px; height: 36px; margin-left: -8px; font-size: 11px; border-radius: 12px; color: #aab4d6; }
+    .menu-mic { position: absolute; left: var(--columna, 18px); bottom: 78px; z-index: 40; width: min(340px, 92vw); padding: 8px; border-radius: 18px; background: rgba(17,20,29,0.98); border: 1px solid rgba(124,156,255,0.3); box-shadow: 0 24px 60px rgba(0,0,0,0.65); transform-origin: bottom left; animation: menuMicEntra 0.28s var(--suave) both; }
+    .menu-mic[hidden] { display: none; }
+    @keyframes menuMicEntra { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+    .menu-mic .titulo-menu { padding: 6px 10px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; color: var(--apagado); text-transform: uppercase; }
+    .menu-mic button.opcion-mic { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; border-radius: 11px; background: transparent; color: #dfe4f5; font-size: 13.5px; text-align: left; cursor: pointer; transition: background 0.2s, transform 0.2s var(--resorte); }
+    .menu-mic button.opcion-mic:hover { background: rgba(124,156,255,0.14); }
+    .menu-mic button.opcion-mic:active { transform: scale(0.98); }
+    .menu-mic button.opcion-mic .marca { width: 18px; flex-shrink: 0; color: #62e6a0; font-weight: 700; }
+    .menu-mic button.opcion-mic .nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .menu-mic button.opcion-mic.elegida { background: rgba(98,230,160,0.1); }
+    .menu-mic .nota-menu { padding: 8px 10px 4px; font-size: 12px; color: var(--apagado); line-height: 1.5; }
+    .menu-mic button.accion-menu { width: 100%; margin-top: 4px; padding: 9px 12px; border: 1px dashed rgba(255,255,255,0.16); border-radius: 11px; background: transparent; color: #aab4d6; font-size: 12.5px; cursor: pointer; }
+    .menu-mic button.accion-menu:hover { background: rgba(255,255,255,0.06); }
+    @media (max-width: 640px) { .menu-mic { left: 10px; bottom: 66px; } .composer .btn-mic-menu { width: 20px; } }
+
     /* Respeta a quien tiene activado "reducir movimiento" en su dispositivo */
     @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
@@ -526,12 +545,14 @@
             <button id="btnQuitarAdjunto" title="Quitar">✕</button>
         </div>
 
+        <div class="menu-mic" id="menuMic" role="menu" hidden></div>
         <div class="chat-input">
           <div class="composer">
             <button class="btn-icono" id="btnAdjuntarImagen" title="Adjuntar imagen">📎</button>
             <button class="btn-icono" id="btnAdjuntarDocumento" title="Adjuntar PDF/Word">📄</button>
             <button class="btn-icono" id="btnModoImagen" title="Generar una imagen">🎨</button>
             <button class="btn-icono" id="btnMicrofono" title="Grabar audio y transcribirlo">🎤</button>
+            <button class="btn-icono btn-mic-menu" id="btnElegirMic" title="Elegir micrófono" aria-label="Elegir micrófono" aria-haspopup="true">▾</button>
             <input type="file" id="inputImagen" accept="image/*" hidden>
             <input type="file" id="inputDocumento" accept=".pdf,.docx" hidden>
             <input type="text" id="userInput" placeholder="Escribe tu mensaje..." autocomplete="off">
@@ -581,6 +602,8 @@
     const btnMicrofono = document.getElementById('btnMicrofono');
     const toggleVoz = document.getElementById('toggleVoz');
     const btnBajar = document.getElementById('btnBajar');
+    const btnElegirMic = document.getElementById('btnElegirMic');
+    const menuMic = document.getElementById('menuMic');
 
     let conversacionActualId = null;
     let imagenPendiente = null;
@@ -668,6 +691,82 @@
     let grabadora = null;
     let fragmentosAudio = [];
 
+    // ===== Elegir micrófono =====
+    let micElegido = '';
+    try { micElegido = localStorage.getItem('codia_mic') || ''; } catch (e) {}
+
+    async function listarMicrofonos() {
+        let dispositivos = await navigator.mediaDevices.enumerateDevices();
+        // Hasta que la persona da permiso, el navegador oculta los nombres.
+        // Pedimos permiso una vez, cerramos el micrófono y volvemos a listar.
+        if (dispositivos.some((d) => d.kind === 'audioinput' && !d.label)) {
+            try {
+                const temporal = await navigator.mediaDevices.getUserMedia({ audio: true });
+                temporal.getTracks().forEach((t) => t.stop());
+                dispositivos = await navigator.mediaDevices.enumerateDevices();
+            } catch (e) { /* sin permiso: se muestran sin nombre */ }
+        }
+        return dispositivos.filter((d) => d.kind === 'audioinput');
+    }
+
+    function nombreMic(d, i) {
+        return (d.label || `Micrófono ${i + 1}`).replace(/^(Default|Predeterminad[oa]) - /i, '');
+    }
+
+    function cerrarMenuMic() { menuMic.hidden = true; }
+
+    async function abrirMenuMic() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) { alert('Tu navegador no permite elegir micrófono.'); return; }
+        if (grabadora && grabadora.state === 'recording') { alert('Detén la grabación antes de cambiar de micrófono.'); return; }
+        menuMic.hidden = false;
+        menuMic.textContent = '';
+        const cargando = document.createElement('div');
+        cargando.className = 'nota-menu'; cargando.textContent = 'Buscando micrófonos…';
+        menuMic.appendChild(cargando);
+        let mics = [];
+        try { mics = await listarMicrofonos(); } catch (e) {}
+        menuMic.textContent = '';
+        const titulo = document.createElement('div');
+        titulo.className = 'titulo-menu'; titulo.textContent = 'Micrófono';
+        menuMic.appendChild(titulo);
+
+        const agregar = (id, texto) => {
+            const b = document.createElement('button');
+            b.className = 'opcion-mic' + (id === micElegido ? ' elegida' : '');
+            b.setAttribute('role', 'menuitemradio');
+            const marca = document.createElement('span'); marca.className = 'marca'; marca.textContent = id === micElegido ? '✓' : '';
+            const nombre = document.createElement('span'); nombre.className = 'nombre'; nombre.textContent = texto;
+            b.append(marca, nombre);
+            b.addEventListener('click', () => {
+                micElegido = id;
+                try { if (id) localStorage.setItem('codia_mic', id); else localStorage.removeItem('codia_mic'); } catch (e) {}
+                btnElegirMic.title = 'Micrófono: ' + texto;
+                cerrarMenuMic();
+            });
+            menuMic.appendChild(b);
+        };
+        agregar('', 'Predeterminado del sistema');
+        // 'default' y 'communications' repiten otros dispositivos: se omiten
+        mics.filter((d) => d.deviceId !== 'default' && d.deviceId !== 'communications')
+            .forEach((d, i) => agregar(d.deviceId, nombreMic(d, i)));
+        if (mics.length === 0) {
+            const nota = document.createElement('div');
+            nota.className = 'nota-menu'; nota.textContent = 'No se encontró ningún micrófono. Conéctalo y pulsa "Actualizar lista".';
+            menuMic.appendChild(nota);
+        }
+        const refrescar = document.createElement('button');
+        refrescar.className = 'accion-menu'; refrescar.textContent = '🔄 Actualizar lista';
+        refrescar.addEventListener('click', abrirMenuMic);
+        menuMic.appendChild(refrescar);
+    }
+
+    btnElegirMic.addEventListener('click', (e) => { e.stopPropagation(); if (menuMic.hidden) abrirMenuMic(); else cerrarMenuMic(); });
+    document.addEventListener('click', (e) => { if (!menuMic.hidden && !menuMic.contains(e.target)) cerrarMenuMic(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMenuMic(); });
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', () => { if (!menuMic.hidden) abrirMenuMic(); });
+    }
+
     // Elige el mejor formato que soporte el navegador (Chrome/Edge/Firefox/Safari)
     function elegirFormatoAudio() {
         const candidatos = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
@@ -687,9 +786,20 @@
         try {
             // Cancelación de eco, reducción de ruido y control automático de
             // volumen: ayudan mucho a que Whisper entienda mejor.
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-            });
+            const base = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: micElegido ? { ...base, deviceId: { exact: micElegido } } : base,
+                });
+            } catch (errorDispositivo) {
+                if (micElegido && (errorDispositivo.name === 'OverconstrainedError' || errorDispositivo.name === 'NotFoundError')) {
+                    // El micrófono guardado ya no está conectado: volvemos al predeterminado
+                    micElegido = '';
+                    try { localStorage.removeItem('codia_mic'); } catch (e) {}
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: base });
+                } else { throw errorDispositivo; }
+            }
             fragmentosAudio = [];
             const formato = elegirFormatoAudio();
             grabadora = formato ? new MediaRecorder(stream, { mimeType: formato, audioBitsPerSecond: 96000 }) : new MediaRecorder(stream);
@@ -786,6 +896,7 @@
             btnModoImagen.style.display = capacidades.generar_imagenes_disponible ? 'block' : 'none';
             const soportaGrabacion = !!(navigator.mediaDevices && window.MediaRecorder);
             btnMicrofono.style.display = (capacidades.voz_disponible && soportaGrabacion) ? 'block' : 'none';
+            btnElegirMic.style.display = btnMicrofono.style.display;
             if (capacidades.gemini_disponible || capacidades.groq_disponible) {
                 const nClaves = ((capacidades.claves || {}).gemini || {}).total || 0;
                 estadoConexion.textContent = 'Conectado' + (nClaves > 1 ? ` · ${nClaves} claves` : '');
