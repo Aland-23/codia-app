@@ -348,6 +348,41 @@ def _imagen_pollinations(prompt: str) -> bytes:
     return _validar_respuesta_imagen(r, "Pollinations")
 
 
+def mejorar_prompt_imagen(pedido: str) -> str:
+    """Reescribe el pedido del usuario como un prompt claro en inglés para el
+    generador de imágenes. Si algo falla, devuelve el pedido original."""
+    instruccion = (
+        "Convierte el pedido del usuario en UN prompt en inglés para un generador de imágenes. "
+        "Interpreta la intención (aunque venga mal escrito o mal transcrito por voz), describe "
+        "sujeto, acción, entorno, iluminación y estilo en una sola frase de máximo 60 palabras. "
+        "Mantén exactamente lo que el usuario pidió; no agregues contenido sexual ni violento. "
+        "Responde SOLO con el prompt, sin comillas ni explicaciones.\n\nPedido: " + pedido.strip()
+    )
+    try:
+        if GROQ_DISPONIBLE:
+            r = POOL_GROQ.ejecutar(
+                lambda c: c.chat.completions.create(
+                    model=GROQ_CHAT_MODEL,
+                    messages=[{"role": "user", "content": instruccion}],
+                    temperature=0.4,
+                    max_tokens=160,
+                )
+            )
+            texto = (r.choices[0].message.content or "").strip()
+        elif GEMINI_DISPONIBLE:
+            r = POOL_GEMINI.ejecutar(
+                lambda c: c.models.generate_content(model="gemini-flash-latest", contents=instruccion)
+            )
+            texto = (r.text or "").strip()
+        else:
+            return pedido
+        texto = texto.strip().strip('"').strip()
+        return texto[:700] if len(texto) > 8 else pedido
+    except Exception as e:  # noqa: BLE001
+        print(f"[CodIA] no se pudo mejorar el prompt de imagen: {str(e)[:200]}", flush=True)
+        return pedido
+
+
 def generar_imagen_ia(prompt: str) -> bytes:
     """Genera una imagen probando los proveedores en orden (IMAGE_PROVIDERS).
     Devuelve los bytes de la imagen o lanza HTTPException con un mensaje claro."""
@@ -968,7 +1003,9 @@ def generar_imagen(solicitud: SolicitudGenerarImagen, db: Session = Depends(get_
     db.commit()
 
     # Generar la imagen y guardarla en disco
-    imagen_bytes = generar_imagen_ia(solicitud.prompt)
+    prompt_mejorado = mejorar_prompt_imagen(solicitud.prompt)
+    print(f"[CodIA] prompt de imagen: {prompt_mejorado}", flush=True)
+    imagen_bytes = generar_imagen_ia(prompt_mejorado)
     nombre_archivo = f"{uuid.uuid4().hex}.{extension_de_imagen(imagen_bytes)}"
     guardar_archivo(nombre_archivo, imagen_bytes)
     imagen_url = f"/api/imagenes/{nombre_archivo}"
