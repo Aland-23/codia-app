@@ -986,27 +986,86 @@ def generar_imagen(solicitud: SolicitudGenerarImagen, db: Session = Depends(get_
     return RespuestaGenerarImagen(imagen_url=imagen_url, conversacion=conversacion)
 
 
+# Frases que Whisper "inventa" cuando el audio está en silencio, muy bajo o
+# cortado (es un defecto conocido del modelo: aprendió de videos de YouTube).
+FRASES_ALUCINADAS = {
+    "gracias", "muchas gracias", "gracias por ver el video", "gracias por ver",
+    "suscribete", "suscribete al canal", "hasta la proxima", "hasta luego",
+    "subtitulos realizados por la comunidad de amaraorg", "amaraorg",
+    "subtitulado por la comunidad de amaraorg", "gracias por vernos",
+}
+
+
+def _normalizar_texto(texto: str) -> str:
+    import unicodedata, re as _r
+    t = unicodedata.normalize("NFD", (texto or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return _r.sub(r"[^a-z0-9 ]", "", t).strip()
+
+
+def _campo(obj, nombre, defecto=None):
+    """Lee un campo tanto de objetos como de diccionarios (según la versión del SDK)."""
+    if isinstance(obj, dict):
+        return obj.get(nombre, defecto)
+    return getattr(obj, nombre, defecto)
+
+
 def transcribir_audio_ia(datos_audio: bytes, nombre_archivo: str) -> str:
     """Transcribe un audio a texto usando Whisper vía Groq. Se usa para la
     entrada de voz: funciona en cualquier navegador (Brave, Firefox, Safari,
     Chrome) porque solo graba el audio en el navegador y lo manda al
-    backend — no depende del servicio de voz de Google."""
+    backend — no depende del servicio de voz de Google.
+
+    Mejoras contra el clásico "gracias." de Whisper: temperatura 0, una pista
+    de contexto (español + programación), y se descartan las transcripciones
+    donde el propio modelo dice que NO había voz (no_speech_prob alto) o que
+    es una frase inventada típica."""
     if not GROQ_DISPONIBLE:
         raise HTTPException(
             status_code=503,
             detail="La transcripción de voz necesita Groq configurado en el backend.",
         )
+    if len(datos_audio) < 2000:
+        raise HTTPException(status_code=422, detail="El audio es demasiado corto. Mantén pulsado un poco más y habla claro.")
     try:
         resultado = POOL_GROQ.ejecutar(
             lambda cliente: cliente.audio.transcriptions.create(
                 file=(nombre_archivo, datos_audio),
                 model=GROQ_WHISPER_MODEL,
                 language="es",
+                temperature=0.0,
+                response_format="verbose_json",
+                prompt="Conversación en español con un asistente de programación. Se habla de código, Python, JavaScript y bases de datos.",
             )
         )
-        return resultado.text
     except Exception as e:
         raise HTTPException(status_code=502, detail=traducir_error_ia(e))
+
+    texto = (_campo(resultado, "text", "") or "").strip()
+    segmentos = _campo(resultado, "segments", None) or []
+    duracion = _campo(resultado, "duration", None)
+
+    prob_sin_voz = None
+    logprob = None
+    if segmentos:
+        probs = [_campo(sg, "no_speech_prob", 0.0) or 0.0 for sg in segmentos]
+        logs = [_campo(sg, "avg_logprob", 0.0) or 0.0 for sg in segmentos]
+        prob_sin_voz = sum(probs) / len(probs)
+        logprob = sum(logs) / len(logs)
+    print(f"[CodIA] voz: dur={duracion} sin_voz={prob_sin_voz} logprob={logprob} texto={texto[:60]!r}", flush=True)
+
+    sin_voz = prob_sin_voz is not None and (
+        prob_sin_voz > 0.8 or (prob_sin_voz > 0.55 and logprob is not None and logprob < -0.7)
+    )
+    es_frase_inventada = _normalizar_texto(texto) in FRASES_ALUCINADAS and (
+        (prob_sin_voz is not None and prob_sin_voz > 0.25) or (duracion is not None and duracion < 2.5)
+    )
+    if not texto or sin_voz or es_frase_inventada:
+        raise HTTPException(
+            status_code=422,
+            detail="No se escuchó bien tu voz. Acércate al micrófono, habla un poco más fuerte y revisa que sea el micrófono correcto.",
+        )
+    return texto
 
 
 class SolicitudTranscribir(BaseModel):

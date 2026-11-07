@@ -214,6 +214,9 @@
     .barra-grabando.visible { animation: subeBarra 0.3s var(--suave); }
     .barra-grabando .punto { width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; animation: parpadeo 1s infinite; }
     @keyframes parpadeo { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .barra-grabando .nivel { display: inline-block; width: 90px; height: 6px; border-radius: 6px; background: rgba(255,255,255,0.12); overflow: hidden; flex-shrink: 0; }
+    .barra-grabando .nivel i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #62e6a0, #ffd166, #ff6b6b); transition: width 0.08s linear; }
+    .barra-grabando #textoGrabando { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .barra-grabando button { margin-left: auto; background: none; border: none; color: #ff9b9b; cursor: pointer; font-size: 13px; font-weight: 700; }
 
     /* ---------- Entrada de texto ---------- */
@@ -513,7 +516,7 @@
         </div>
 
         <div class="barra-grabando" id="barraGrabando">
-            <span class="punto"></span> Grabando audio...
+            <span class="punto"></span> <span id="textoGrabando">Grabando audio…</span> <span class="nivel"><i id="nivelMic"></i></span>
             <button id="btnDetenerGrabacion">⏹ Detener y transcribir</button>
         </div>
 
@@ -665,18 +668,72 @@
     let grabadora = null;
     let fragmentosAudio = [];
 
+    // Elige el mejor formato que soporte el navegador (Chrome/Edge/Firefox/Safari)
+    function elegirFormatoAudio() {
+        const candidatos = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+        return candidatos.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+    }
+    function extensionDeAudio(mime) {
+        if (mime.includes('ogg')) return 'ogg';
+        if (mime.includes('mp4')) return 'm4a';
+        return 'webm';
+    }
+
+    let contextoAudio = null, relojNivel = 0, nivelMaximo = 0, inicioGrabacion = 0;
+    const textoGrabando = document.getElementById('textoGrabando');
+    const nivelMic = document.getElementById('nivelMic');
+
     async function iniciarGrabacion() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Cancelación de eco, reducción de ruido y control automático de
+            // volumen: ayudan mucho a que Whisper entienda mejor.
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+            });
             fragmentosAudio = [];
-            grabadora = new MediaRecorder(stream);
-            grabadora.ondataavailable = (e) => fragmentosAudio.push(e.data);
+            const formato = elegirFormatoAudio();
+            grabadora = formato ? new MediaRecorder(stream, { mimeType: formato, audioBitsPerSecond: 96000 }) : new MediaRecorder(stream);
+            grabadora.ondataavailable = (e) => { if (e.data && e.data.size) fragmentosAudio.push(e.data); };
             grabadora.onstop = async () => {
                 stream.getTracks().forEach((track) => track.stop());
-                const blobAudio = new Blob(fragmentosAudio, { type: 'audio/webm' });
-                await transcribirYcolocarEnInput(blobAudio);
+                clearInterval(relojNivel);
+                if (contextoAudio) { contextoAudio.close().catch(() => {}); contextoAudio = null; }
+                const duracionMs = Date.now() - inicioGrabacion;
+                const mime = grabadora.mimeType || formato || 'audio/webm';
+                const blobAudio = new Blob(fragmentosAudio, { type: mime });
+                if (duracionMs < 700 || blobAudio.size < 2000) {
+                    alert('El audio fue muy corto. Pulsa el micrófono, habla durante un par de segundos y luego detén la grabación.');
+                    return;
+                }
+                if (nivelMaximo < 0.02) {
+                    alert('No se escuchó nada en el micrófono. Revisa que el micrófono correcto esté seleccionado en tu computadora/navegador y que no esté silenciado.');
+                    return;
+                }
+                await transcribirYcolocarEnInput(blobAudio, 'audio.' + extensionDeAudio(mime));
             };
-            grabadora.start();
+
+            // Medidor de volumen en vivo: sirve para ver que el micrófono SÍ te oye
+            nivelMaximo = 0;
+            try {
+                contextoAudio = new (window.AudioContext || window.webkitAudioContext)();
+                const analizador = contextoAudio.createAnalyser();
+                analizador.fftSize = 1024;
+                contextoAudio.createMediaStreamSource(stream).connect(analizador);
+                const muestras = new Uint8Array(analizador.fftSize);
+                relojNivel = setInterval(() => {
+                    analizador.getByteTimeDomainData(muestras);
+                    let suma = 0;
+                    for (let k = 0; k < muestras.length; k++) { const v = (muestras[k] - 128) / 128; suma += v * v; }
+                    const rms = Math.sqrt(suma / muestras.length);
+                    nivelMaximo = Math.max(nivelMaximo, rms);
+                    nivelMic.style.width = Math.min(100, rms * 400) + '%';
+                }, 80);
+            } catch (e) { nivelMaximo = 1; /* sin medidor: no bloqueamos el envío */ }
+
+            const pista = stream.getAudioTracks()[0];
+            textoGrabando.textContent = 'Grabando' + (pista && pista.label ? ' con: ' + pista.label : ' audio…');
+            inicioGrabacion = Date.now();
+            grabadora.start(250);
             btnMicrofono.classList.add('activo');
             mostrarBarra(barraGrabando, true);
         } catch (e) {
@@ -690,22 +747,22 @@
         mostrarBarra(barraGrabando, false);
     }
 
-    async function transcribirYcolocarEnInput(blobAudio) {
+    async function transcribirYcolocarEnInput(blobAudio, nombreArchivo) {
         const lector = new FileReader();
         lector.onload = async () => {
             const base64 = lector.result.split(',')[1];
-            userInput.placeholder = 'Transcribiendo audio...';
+            userInput.placeholder = 'Transcribiendo audio…';
             try {
                 const res = await fetch(`${API_URL}/api/transcribir-audio`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ audio_base64: base64, nombre_archivo: 'audio.webm' }),
+                    body: JSON.stringify({ audio_base64: base64, nombre_archivo: nombreArchivo || 'audio.webm' }),
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'No se pudo transcribir');
                 userInput.value = data.texto;
                 userInput.focus();
             } catch (e) {
-                alert('No se pudo transcribir el audio: ' + e.message);
+                alert(e.message);
             } finally {
                 userInput.placeholder = 'Escribe tu mensaje...';
             }
