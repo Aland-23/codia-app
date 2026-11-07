@@ -36,10 +36,10 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, LargeBinary
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 
 load_dotenv()
@@ -139,6 +139,17 @@ class Mensaje(Base):
     conversacion = relationship("Conversacion", back_populates="mensajes")
 
 
+class Archivo(Base):
+    """Imágenes y documentos guardados DENTRO de la base de datos. El disco de
+    Render se borra en cada redeploy; la base de datos (Neon) no, así las
+    imágenes de los chats siguen viéndose siempre."""
+    __tablename__ = "archivos"
+    nombre = Column(String, primary_key=True)
+    mime = Column(String, nullable=False)
+    datos = Column(LargeBinary, nullable=False)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -146,6 +157,44 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+MIME_POR_EXTENSION = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def extension_de_imagen(datos: bytes) -> str:
+    """Detecta el formato real por los primeros bytes (los proveedores de
+    imágenes a veces devuelven JPEG o WebP en vez de PNG)."""
+    if datos[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if datos[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if datos[:4] == b"RIFF" and datos[8:12] == b"WEBP":
+        return "webp"
+    return "png"
+
+
+def guardar_archivo(nombre: str, datos: bytes) -> None:
+    """Guarda el archivo en la base de datos (permanente) y en disco (copia
+    rápida). Si la base falla, igual queda en disco y se avisa en los logs."""
+    with open(os.path.join(UPLOADS_DIR, nombre), "wb") as f:
+        f.write(datos)
+    mime = MIME_POR_EXTENSION.get(nombre.rsplit(".", 1)[-1], "application/octet-stream")
+    db = SessionLocal()
+    try:
+        db.merge(Archivo(nombre=nombre, mime=mime, datos=datos))
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        print(f"[CodIA] No se pudo guardar {nombre} en la base de datos: {e}", flush=True)
     finally:
         db.close()
 
@@ -618,8 +667,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Sirve las imágenes subidas en /api/imagenes/<archivo>
-app.mount("/api/imagenes", StaticFiles(directory=UPLOADS_DIR), name="imagenes")
+# Sirve las imágenes y documentos en /api/imagenes/<archivo>: primero del disco
+# (rápido) y, si el disco se borró por un redeploy, desde la base de datos.
+import re as _re
+
+_NOMBRE_ARCHIVO_VALIDO = _re.compile(r"^[0-9a-f]{32}\.(png|jpg|webp|pdf|docx)$")
+
+
+@app.get("/api/imagenes/{nombre}")
+def servir_archivo(nombre: str):
+    if not _NOMBRE_ARCHIVO_VALIDO.match(nombre):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    ruta = os.path.join(UPLOADS_DIR, nombre)
+    cabeceras = {"Cache-Control": "public, max-age=31536000, immutable"}
+    mime = MIME_POR_EXTENSION.get(nombre.rsplit(".", 1)[-1], "application/octet-stream")
+    if os.path.isfile(ruta):
+        with open(ruta, "rb") as f:
+            return Response(content=f.read(), media_type=mime, headers=cabeceras)
+    db = SessionLocal()
+    try:
+        archivo = db.get(Archivo, nombre)
+        if archivo is None:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        datos, mime_bd = bytes(archivo.datos), archivo.mime
+    finally:
+        db.close()
+    try:  # lo dejamos otra vez en disco para que la próxima vez sea más rápido
+        with open(ruta, "wb") as f:
+            f.write(datos)
+    except OSError:
+        pass
+    return Response(content=datos, media_type=mime_bd, headers=cabeceras)
 
 
 def obtener_o_crear_usuario(db: Session, usuario_id: str) -> Usuario:
@@ -699,9 +777,7 @@ def _preparar_mensaje_usuario(solicitud: "SolicitudChat", conversacion: Conversa
         try:
             extension = "png" if "png" in (solicitud.imagen_mime or "") else "jpg"
             nombre_archivo = f"{uuid.uuid4().hex}.{extension}"
-            ruta_archivo = os.path.join(UPLOADS_DIR, nombre_archivo)
-            with open(ruta_archivo, "wb") as f:
-                f.write(base64.b64decode(solicitud.imagen_base64))
+            guardar_archivo(nombre_archivo, base64.b64decode(solicitud.imagen_base64))
             imagen_url = f"/api/imagenes/{nombre_archivo}"
         except Exception:
             raise HTTPException(status_code=400, detail="La imagen enviada no es válida")
@@ -714,9 +790,7 @@ def _preparar_mensaje_usuario(solicitud: "SolicitudChat", conversacion: Conversa
             nombre_original = solicitud.documento_nombre or "documento"
             extension = "pdf" if nombre_original.lower().endswith(".pdf") else "docx"
             nombre_archivo = f"{uuid.uuid4().hex}.{extension}"
-            ruta_archivo = os.path.join(UPLOADS_DIR, nombre_archivo)
-            with open(ruta_archivo, "wb") as f:
-                f.write(datos_documento)
+            guardar_archivo(nombre_archivo, datos_documento)
             documento_url = f"/api/imagenes/{nombre_archivo}"
 
             texto_extraido = extraer_texto_documento(
@@ -895,9 +969,8 @@ def generar_imagen(solicitud: SolicitudGenerarImagen, db: Session = Depends(get_
 
     # Generar la imagen y guardarla en disco
     imagen_bytes = generar_imagen_ia(solicitud.prompt)
-    nombre_archivo = f"{uuid.uuid4().hex}.png"
-    with open(os.path.join(UPLOADS_DIR, nombre_archivo), "wb") as f:
-        f.write(imagen_bytes)
+    nombre_archivo = f"{uuid.uuid4().hex}.{extension_de_imagen(imagen_bytes)}"
+    guardar_archivo(nombre_archivo, imagen_bytes)
     imagen_url = f"/api/imagenes/{nombre_archivo}"
 
     mensaje_ia = Mensaje(
