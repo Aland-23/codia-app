@@ -561,7 +561,15 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     .message .md tbody tr:nth-child(even) td { background: rgba(var(--tinta),0.025); }
     .message .md td:first-child { font-weight: 600; white-space: nowrap; }
     .message .md table { min-width: 460px; }
-    /* selector de tema */
+    /* ===== Organizadores gráficos ===== */
+    .bloque-diagrama.org-wrap { padding: 10px 10px 6px; background: #ffffff; border-color: rgba(var(--tinta),0.12); }
+    .org-barra { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    .org-barra button, .org-overlay-barra button { background: #eef1fb; color: #2b3558; border: 1px solid #d5dbef; border-radius: 999px; padding: 6px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: transform .15s, background .15s; }
+    .org-barra button:hover, .org-overlay-barra button:hover { background: #dfe5fb; transform: translateY(-1px); }
+    .org-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(8,10,16,.82); backdrop-filter: blur(6px); display: flex; flex-direction: column; animation: fadeSimple .2s ease; }
+    .org-overlay-barra { display: flex; gap: 8px; justify-content: center; padding: 12px; flex: none; }
+    .org-overlay-caja { flex: 1; overflow: auto; margin: 0 14px 14px; background: #fff; border-radius: 14px; padding: 10px; }
+        /* selector de tema */
     .selector-tema { position:relative; }
     .btn-tema { background:rgba(var(--tinta),0.06); border:1px solid rgba(var(--tinta),0.12); color:var(--texto); border-radius:999px; padding:7px 12px; cursor:pointer; font-size:13px; transition:transform .2s var(--resorte), background .2s; }
     .btn-tema:hover { background:rgba(var(--tinta),0.12); transform:translateY(-1px); }
@@ -656,7 +664,11 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
     // IPv6 y dar "Failed to fetch" aunque el servidor esté corriendo).
     const API_URL = window.CODIA_API_URL || 'https://codia-backend.onrender.com';
 
-    if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
+    if (window.mermaid) mermaid.initialize({
+        startOnLoad: false, theme: 'base', securityLevel: 'strict',
+        themeVariables: { fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif', fontSize: '15px', primaryColor: '#e7ecff', primaryBorderColor: '#5b6cff', primaryTextColor: '#1b2236', lineColor: '#7b8499', secondaryColor: '#f1e8ff', tertiaryColor: '#ffffff' },
+        flowchart: { curve: 'basis', padding: 14 },
+    });
 
     let usuarioId = localStorage.getItem('codia_usuario_id');
     if (!usuarioId) { usuarioId = crypto.randomUUID(); localStorage.setItem('codia_usuario_id', usuarioId); }
@@ -746,7 +758,7 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
             alert('Tu navegador no soporta lectura en voz alta.');
             return;
         }
-        const textoLimpio = texto.replace(/```[\s\S]*?```/g, 'código omitido.');
+        const textoLimpio = texto.replace(/```organizador[\s\S]*?```/g, 'Te muestro un organizador gráfico.').replace(/```mermaid[\s\S]*?```/g, 'Te muestro un diagrama.').replace(/```[\s\S]*?```/g, 'código omitido.');
         speechSynthesis.cancel();
         // Pequeño retraso: en Chrome, speak() justo después de cancel() a
         // veces se descarta en silencio (bug conocido de Chromium).
@@ -1427,12 +1439,723 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
         return x;
     }
 
+    // =====================================================================
+    //  Organizadores gráficos (mapa mental, esquema, línea de tiempo,
+    //  proceso y ciclo): la IA entrega un JSON corto en un bloque
+    //  ```organizador y aquí se dibuja como SVG con diseño propio.
+    // =====================================================================
+    const ORG_COLORES = ['#4f6bff', '#f76707', '#12b886', '#e64980', '#f59f00', '#7950f2', '#0c8599', '#d9480f'];
+    const ORG_FUENTE = "Inter, 'Segoe UI', system-ui, -apple-system, sans-serif";
+    let orgContador = 0;
+
+    function orgEsc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+    function orgAnchoTexto(s, tam) {
+        let u = 0;
+        for (const ch of String(s)) u += /\p{Extended_Pictographic}/u.test(ch) ? 1.9 : (/[A-ZÁÉÍÓÚÑMW]/.test(ch) ? 1.15 : (/[ilj.,;:!|' ]/.test(ch) ? 0.55 : 1));
+        return u * tam * 0.56;
+    }
+    function orgEnvolver(texto, maxCar, maxLineas) {
+        const palabras = String(texto == null ? '' : texto).trim().split(/\s+/).filter(Boolean);
+        const lineas = []; let actual = '';
+        palabras.forEach((p) => {
+            if (actual && (actual + ' ' + p).length > maxCar) { lineas.push(actual); actual = p; }
+            else actual = actual ? actual + ' ' + p : p;
+        });
+        if (actual) lineas.push(actual);
+        if (lineas.length > maxLineas) { lineas.length = maxLineas; lineas[maxLineas - 1] = lineas[maxLineas - 1].replace(/\s*\S{0,3}$/, '') + '…'; }
+        return lineas.length ? lineas : [''];
+    }
+    function orgTexto(lineas, cx, y0, tam, color, peso, anchor) {
+        const alto = tam + 4;
+        return lineas.map((l, i) => `<text x="${cx}" y="${y0 + i * alto + tam * 0.78}" font-size="${tam}" font-weight="${peso}" fill="${color}" text-anchor="${anchor || 'middle'}" font-family="${ORG_FUENTE}">${orgEsc(l)}</text>`).join('');
+    }
+    function orgEnvoltura(ancho, alto, contenido, uid, extra) {
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ancho} ${alto}" width="${ancho}" height="${alto}" data-w="${ancho}" data-h="${alto}" style="max-width:100%;height:auto;display:block" role="img">` +
+            `<style>@keyframes orgIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}@keyframes orgLn{from{opacity:0}to{opacity:1}}` +
+            `.org-n{animation:orgIn .55s cubic-bezier(.34,1.56,.64,1) both;transform-box:fill-box;transform-origin:center}.org-e{animation:orgLn .7s ease both}</style>` +
+            `<defs><linearGradient id="g${uid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f6bff"/><stop offset="1" stop-color="#8a5cff"/></linearGradient>` +
+            `<marker id="f${uid}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b93a7"/></marker></defs>` +
+            `<rect width="${ancho}" height="${alto}" fill="#ffffff"/>${extra || ''}${contenido}</svg>`;
+    }
+
+    // ---------- Mapa mental / esquema (árbol con ramas de colores) ----------
+    function orgMedirArbol(n, nivel) {
+        const tam = nivel === 1 ? 15 : 13.5;
+        const etiqueta = (n.e ? n.e + ' ' : '') + (n.t || '');
+        n._l = orgEnvolver(etiqueta, nivel === 1 ? 20 : 24, 3);
+        n._tam = tam;
+        n._w = Math.max(...n._l.map((l) => orgAnchoTexto(l, tam))) + (nivel === 1 ? 34 : 24);
+        n._h = n._l.length * (tam + 4) + (nivel === 1 ? 18 : 12);
+        n.hijos = Array.isArray(n.hijos) ? n.hijos.filter((h) => h && h.t) : [];
+        n.hijos.forEach((h) => orgMedirArbol(h, nivel + 1));
+    }
+    function orgAlturaArbol(n) {
+        const suma = n.hijos.reduce((a, h) => a + orgAlturaArbol(h), 0);
+        n._H = n.hijos.length ? Math.max(n._h + 14, suma) : n._h + 14;
+        return n._H;
+    }
+    function orgAnchosPorNivel(ramas, anchos) {
+        const rec = (n, nivel) => { anchos[nivel] = Math.max(anchos[nivel] || 0, n._w); n.hijos.forEach((h) => rec(h, nivel + 1)); };
+        ramas.forEach((r) => rec(r, 1));
+    }
+    function orgColocar(n, nivel, xIni, yTop, lado, anchos, color, out, padre) {
+        const yc = yTop + n._H / 2;
+        const cx = lado * (xIni + n._w / 2);
+        const item = { n, nivel, cx, cy: yc, color };
+        out.nodos.push(item);
+        if (padre) {
+            const px = padre.cx + lado * (padre.n._w / 2), cxBorde = cx - lado * (n._w / 2);
+            const dx = (cxBorde - px) / 2;
+            out.aristas.push({ d: `M${px},${padre.cy} C${px + dx},${padre.cy} ${cxBorde - dx},${yc} ${cxBorde},${yc}`, color, ancho: nivel === 2 ? 3 : 2 });
+        }
+        let y = yTop + (n._H - n.hijos.reduce((a, h) => a + h._H, 0)) / 2;
+        n.hijos.forEach((h) => {
+            orgColocar(h, nivel + 1, xIni + anchos[nivel] + 52, y, lado, anchos, color, out, item);
+            y += h._H;
+        });
+        return item;
+    }
+    function orgArbolSVG(datos, ambosLados) {
+        const uid = ++orgContador;
+        const ramas = (datos.nodos || datos.ramas || []).filter((r) => r && r.t);
+        if (!ramas.length) throw new Error('sin nodos');
+        const raiz = { t: datos.titulo || datos.tema || 'Tema', hijos: [] };
+        const rl = orgEnvolver(raiz.t, 18, 3);
+        const rw = Math.max(...rl.map((l) => orgAnchoTexto(l, 17))) + 48, rh = rl.length * 22 + 30;
+        ramas.forEach((r) => orgMedirArbol(r, 1));
+        ramas.forEach(orgAlturaArbol);
+        // reparto de ramas entre izquierda y derecha, equilibrando la altura
+        let derecha = ramas, izquierda = [];
+        if (ambosLados && ramas.length > 1) {
+            const total = ramas.reduce((a, r) => a + r._H, 0); let acum = 0; derecha = []; izquierda = [];
+            ramas.forEach((r) => { if (acum < total / 2 && derecha.length < ramas.length - 1) { derecha.push(r); acum += r._H; } else izquierda.push(r); });
+        }
+        const out = { nodos: [], aristas: [] };
+        const centro = { n: { _w: rw }, cx: 0, cy: 0 };
+        const lados = [[derecha, 1], [izquierda, -1]];
+        lados.forEach(([lista, lado]) => {
+            if (!lista.length) return;
+            const anchos = {}; orgAnchosPorNivel(lista, anchos);
+            const alto = lista.reduce((a, r) => a + r._H, 0);
+            let y = -alto / 2;
+            lista.forEach((r) => {
+                const color = ORG_COLORES[ramas.indexOf(r) % ORG_COLORES.length];
+                const it = orgColocar(r, 1, rw / 2 + 58, y, lado, anchos, color, out, null);
+                const px = lado * (rw / 2), cxB = it.cx - lado * (r._w / 2), dx = (cxB - px) / 2;
+                out.aristas.push({ d: `M${px},0 C${px + dx},0 ${cxB - dx},${it.cy} ${cxB},${it.cy}`, color, ancho: 4.5 });
+                y += r._H;
+            });
+        });
+        let x0 = -rw / 2, x1 = rw / 2, y0 = -rh / 2, y1 = rh / 2;
+        out.nodos.forEach((it) => { x0 = Math.min(x0, it.cx - it.n._w / 2); x1 = Math.max(x1, it.cx + it.n._w / 2); y0 = Math.min(y0, it.cy - it.n._h / 2); y1 = Math.max(y1, it.cy + it.n._h / 2); });
+        const pad = 30, W = Math.ceil(x1 - x0 + pad * 2), H = Math.ceil(y1 - y0 + pad * 2);
+        let svg = `<g transform="translate(${pad - x0},${pad - y0})">`;
+        out.aristas.forEach((a, i) => { svg += `<path class="org-e" style="animation-delay:${0.15 + i * 0.03}s" d="${a.d}" fill="none" stroke="${a.color}" stroke-width="${a.ancho}" stroke-linecap="round" opacity=".85"/>`; });
+        out.nodos.forEach((it, i) => {
+            const n = it.n, x = it.cx - n._w / 2, y = it.cy - n._h / 2, d = `style="animation-delay:${0.2 + i * 0.045}s"`;
+            if (it.nivel === 1) {
+                svg += `<g class="org-n" ${d}><rect x="${x}" y="${y}" width="${n._w}" height="${n._h}" rx="${Math.min(20, n._h / 2)}" fill="${it.color}"/>${orgTexto(n._l, it.cx, y + 9, n._tam, '#ffffff', 700)}</g>`;
+            } else {
+                svg += `<g class="org-n" ${d}><rect x="${x}" y="${y}" width="${n._w}" height="${n._h}" rx="10" fill="${it.color}" fill-opacity=".1" stroke="${it.color}" stroke-width="1.6"/>${orgTexto(n._l, it.cx, y + 6, n._tam, '#1b2236', 500)}</g>`;
+            }
+        });
+        svg += `<g class="org-n"><rect x="${-rw / 2}" y="${-rh / 2}" width="${rw}" height="${rh}" rx="${Math.min(26, rh / 2)}" fill="url(#g${uid})"/>${orgTexto(rl, 0, -rh / 2 + 15, 17, '#ffffff', 800)}</g></g>`;
+        return orgEnvoltura(W, H, svg, uid);
+    }
+
+    // ---------- Línea de tiempo y proceso (columna de tarjetas) ----------
+    function orgListaSVG(datos, esTiempo) {
+        const uid = ++orgContador;
+        const items = (datos.eventos || datos.pasos || datos.nodos || []).filter((e) => e && (e.t || e.f));
+        if (!items.length) throw new Error('sin elementos');
+        const ancho = 640, xCard = 170, wCard = ancho - xCard - 24;
+        let y = 24, svg = '';
+        if (datos.titulo) { svg += `<text x="24" y="${y + 18}" font-size="21" font-weight="800" fill="#1b2236" font-family="${ORG_FUENTE}">${orgEsc(datos.titulo)}</text>`; y += 52; }
+        const yInicio = y;
+        const filas = items.map((e, i) => {
+            const tl = orgEnvolver(e.t || '', 40, 2), dl = e.d ? orgEnvolver(e.d, 56, 3) : [];
+            const h = 20 + tl.length * 19 + (dl.length ? dl.length * 17 + 6 : 0) + 10;
+            const fila = { e, i, tl, dl, h, y };
+            y += h + (esTiempo ? 20 : 34);
+            return fila;
+        });
+        const total = y - (esTiempo ? 20 : 34) + 24;
+        if (esTiempo) {
+            svg += `<line class="org-e" x1="140" y1="${yInicio + 10}" x2="140" y2="${total - 28}" stroke="#d0d5e2" stroke-width="3" stroke-linecap="round"/>`;
+        }
+        filas.forEach((f) => {
+            const c = ORG_COLORES[f.i % ORG_COLORES.length], d = `style="animation-delay:${0.1 + f.i * 0.08}s"`;
+            const cy = f.y + f.h / 2;
+            let g = `<g class="org-n" ${d}>`;
+            g += `<rect x="${xCard}" y="${f.y}" width="${wCard}" height="${f.h}" rx="12" fill="#ffffff" stroke="${c}" stroke-opacity=".5" stroke-width="1.5"/>`;
+            g += `<rect x="${xCard}" y="${f.y}" width="6" height="${f.h}" rx="3" fill="${c}"/>`;
+            g += orgTexto(f.tl, xCard + 20, f.y + 10, 15, '#1b2236', 700, 'start');
+            if (f.dl.length) g += orgTexto(f.dl, xCard + 20, f.y + 10 + f.tl.length * 19 + 4, 12.5, '#5b6478', 400, 'start');
+            if (esTiempo) {
+                const fecha = String(f.e.f || '').slice(0, 14);
+                g += `<rect x="12" y="${cy - 14}" width="104" height="28" rx="14" fill="${c}"/>`;
+                g += orgTexto([fecha], 64, cy - 9, 12.5, '#ffffff', 700);
+                g += `<circle cx="140" cy="${cy}" r="8" fill="#ffffff" stroke="${c}" stroke-width="4"/>`;
+                g += `<line x1="148" y1="${cy}" x2="${xCard}" y2="${cy}" stroke="${c}" stroke-width="2"/>`;
+            } else {
+                g += `<circle cx="96" cy="${cy}" r="22" fill="${c}"/>` + orgTexto([String(f.i + 1)], 96, cy - 11, 20, '#ffffff', 800);
+                g += `<line x1="118" y1="${cy}" x2="${xCard}" y2="${cy}" stroke="${c}" stroke-width="2"/>`;
+                if (f.i < filas.length - 1) g += `<line class="org-e" x1="96" y1="${cy + 24}" x2="96" y2="${filas[f.i + 1].y + filas[f.i + 1].h / 2 - 25}" stroke="#8b93a7" stroke-width="2.4" marker-end="url(#f${uid})"/>`;
+            }
+            svg += g + '</g>';
+        });
+        return orgEnvoltura(ancho, Math.ceil(total), svg, uid);
+    }
+
+    // ---------- Ciclo (tarjetas en círculo con flechas) ----------
+    function orgCicloSVG(datos) {
+        const uid = ++orgContador;
+        const pasos = (datos.pasos || datos.nodos || datos.eventos || []).filter((e) => e && e.t).slice(0, 10);
+        if (pasos.length < 2) throw new Error('pocos pasos');
+        const n = pasos.length, wC = 178;
+        const info = pasos.map((p) => { const tl = orgEnvolver(p.t, 20, 2), dl = p.d ? orgEnvolver(p.d, 26, 2) : []; return { p, tl, dl, h: 18 + tl.length * 18 + (dl.length ? dl.length * 15 + 4 : 0) + 8 }; });
+        const R = Math.max(150, (wC + 40) / (2 * Math.sin(Math.PI / n)) + 20);
+        const hMax = Math.max(...info.map((i) => i.h));
+        const mx = R + wC / 2 + 36, my = R + hMax / 2 + 36;
+        let svg = `<g transform="translate(${mx},${my})">`;
+        const centroTxt = orgEnvolver(datos.titulo || '', 16, 3);
+        if (datos.titulo) svg += `<circle r="${Math.min(R * 0.42, 74)}" fill="url(#g${uid})" opacity=".12"/>` + orgTexto(centroTxt, 0, -centroTxt.length * 11, 17, '#2b3558', 800);
+        const margen = ((wC / 2 + 14) / R) * 0.95;
+        info.forEach((it, i) => {
+            const a = -Math.PI / 2 + (2 * Math.PI * i) / n, c = ORG_COLORES[i % ORG_COLORES.length];
+            const a1 = a + margen, a2 = a + (2 * Math.PI) / n - margen;
+            if (a2 > a1) svg += `<path class="org-e" style="animation-delay:${0.2 + i * 0.08}s" d="M${R * Math.cos(a1)},${R * Math.sin(a1)} A${R},${R} 0 0 1 ${R * Math.cos(a2)},${R * Math.sin(a2)}" fill="none" stroke="#8b93a7" stroke-width="2.6" marker-end="url(#f${uid})"/>`;
+        });
+        info.forEach((it, i) => {
+            const a = -Math.PI / 2 + (2 * Math.PI * i) / n, c = ORG_COLORES[i % ORG_COLORES.length];
+            const x = R * Math.cos(a), y = R * Math.sin(a);
+            svg += `<g class="org-n" style="animation-delay:${0.1 + i * 0.08}s"><rect x="${x - wC / 2}" y="${y - it.h / 2}" width="${wC}" height="${it.h}" rx="14" fill="#fff" stroke="${c}" stroke-width="2.2"/>` +
+                `<circle cx="${x - wC / 2}" cy="${y - it.h / 2}" r="13" fill="${c}"/>` + orgTexto([String(i + 1)], x - wC / 2, y - it.h / 2 - 8, 13, '#fff', 800) +
+                orgTexto(it.tl, x, y - it.h / 2 + 12, 14, '#1b2236', 700) +
+                (it.dl.length ? orgTexto(it.dl, x, y - it.h / 2 + 12 + it.tl.length * 18 + 2, 12, '#5b6478', 400) : '') + '</g>';
+        });
+        svg += '</g>';
+        return orgEnvoltura(Math.ceil(mx * 2), Math.ceil(my * 2), svg, uid);
+    }
+
+    // ---------- Más organizadores: esquema con llaves, organigrama, mapa conceptual,
+    //            Venn, causa-efecto (espina de pescado) y diagrama de cuerpo libre ----------
+    function orgMedirRaiz(titulo, tam) {
+        const l = orgEnvolver(titulo, 18, 3);
+        return { l, w: Math.max(...l.map((x) => orgAnchoTexto(x, tam))) + 48, h: l.length * (tam + 5) + 26 };
+    }
+    function orgCaja(it, uid, i, solido) {
+        const n = it.n, x = it.x != null ? it.x : it.cx - n._w / 2, y = it.cy - n._h / 2, d = `style="animation-delay:${0.15 + i * 0.05}s"`;
+        if (it.raiz) return `<g class="org-n" ${d}><rect x="${x}" y="${y}" width="${n._w}" height="${n._h}" rx="${Math.min(24, n._h / 2)}" fill="url(#g${uid})"/>${orgTexto(n._l, x + n._w / 2, y + 13, n._tam, '#ffffff', 800)}</g>`;
+        if (solido) return `<g class="org-n" ${d}><rect x="${x}" y="${y}" width="${n._w}" height="${n._h}" rx="${Math.min(14, n._h / 2)}" fill="${it.color}"/>${orgTexto(n._l, x + n._w / 2, y + 9, n._tam, '#ffffff', 700)}</g>`;
+        return `<g class="org-n" ${d}><rect x="${x}" y="${y}" width="${n._w}" height="${n._h}" rx="9" fill="${it.color}" fill-opacity=".1" stroke="${it.color}" stroke-width="1.6"/>${orgTexto(n._l, x + n._w / 2, y + 6, n._tam, '#1b2236', 500)}</g>`;
+    }
+
+    // Cuadro sinóptico auténtico: raíz a la izquierda y llaves { que abren cada nivel
+    function orgEsquemaSVG(datos) {
+        const uid = ++orgContador;
+        const ramas = (datos.nodos || datos.ramas || []).filter((r) => r && r.t);
+        if (!ramas.length) throw new Error('sin nodos');
+        const rm = orgMedirRaiz(datos.titulo || 'Tema', 17);
+        ramas.forEach((r) => orgMedirArbol(r, 1));
+        const raiz = { t: datos.titulo || 'Tema', hijos: ramas, _w: rm.w, _h: rm.h, _l: rm.l, _tam: 17 };
+        orgAlturaArbol(raiz);
+        const anchos = { 0: rm.w }; orgAnchosPorNivel(ramas, anchos);
+        const items = [], llaves = [];
+        const colocar = (n, nivel, x, yTop, color) => {
+            const it = { n, nivel, x, cy: yTop + n._H / 2, color, raiz: nivel === 0 };
+            items.push(it);
+            if (n.hijos.length) {
+                let y = yTop + (n._H - n.hijos.reduce((a, h) => a + h._H, 0)) / 2;
+                const xh = x + anchos[nivel] + 52, cs = [];
+                n.hijos.forEach((h, i) => { cs.push(colocar(h, nivel + 1, xh, y, nivel === 0 ? ORG_COLORES[i % ORG_COLORES.length] : color)); y += h._H; });
+                llaves.push({ p: it, cs, xb: x + anchos[nivel] + 20, color: nivel === 0 ? '#6b7390' : color });
+            }
+            return it;
+        };
+        colocar(raiz, 0, 0, 0, '#6b7390');
+        let svg = '', k = 0;
+        llaves.forEach((l) => {
+            const y1 = l.cs[0].cy, y2 = l.cs[l.cs.length - 1].cy, xb = l.xb, xr = xb + 12, xt = xb - 11, c = l.color;
+            const pr = l.p.x + l.p.n._w;
+            const xh = l.cs[0].x;
+            let d = '';
+            if (l.cs.length === 1) d = `M${pr},${l.p.cy} L${xh},${l.cs[0].cy}`;
+            else {
+                const r = Math.min(10, (y2 - y1) / 4), ym = Math.max(y1 + r * 2, Math.min(y2 - r * 2, l.p.cy));
+                d = `M${pr},${l.p.cy} L${xt},${ym} M${xr},${y1} Q${xb},${y1} ${xb},${y1 + r} L${xb},${ym - r} Q${xb},${ym} ${xt},${ym} Q${xb},${ym} ${xb},${ym + r} L${xb},${y2 - r} Q${xb},${y2} ${xr},${y2}`;
+                l.cs.forEach((h, i) => { d += ` M${i === 0 || i === l.cs.length - 1 ? xr : xb},${h.cy} L${xh},${h.cy}`; });
+            }
+            svg += `<path class="org-e" style="animation-delay:${0.1 + (k++) * 0.05}s" d="${d}" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+        });
+        items.forEach((it, i) => { svg += orgCaja(it, uid, i, it.nivel === 1); });
+        let x1 = 0, y0 = 1e9, y1 = -1e9;
+        items.forEach((it) => { x1 = Math.max(x1, it.x + it.n._w); y0 = Math.min(y0, it.cy - it.n._h / 2); y1 = Math.max(y1, it.cy + it.n._h / 2); });
+        const pad = 30;
+        return orgEnvoltura(Math.ceil(x1 + pad * 2), Math.ceil(y1 - y0 + pad * 2), `<g transform="translate(${pad},${pad - y0})">${svg}</g>`, uid);
+    }
+
+    // Organigrama / jerarquía de arriba hacia abajo
+    function orgOrganigramaSVG(datos) {
+        const uid = ++orgContador;
+        const ramas = (datos.nodos || datos.ramas || []).filter((r) => r && r.t);
+        if (!ramas.length) throw new Error('sin nodos');
+        const raiz = { t: datos.titulo || 'Organización', hijos: ramas };
+        orgMedirArbol(raiz, 1);
+        const RAIZ_W = orgMedirRaiz(raiz.t, 16); raiz._l = RAIZ_W.l; raiz._w = RAIZ_W.w; raiz._h = RAIZ_W.h; raiz._tam = 16;
+        const GAPX = 26, GAPY = 58;
+        const ancho = (n) => { n._S = Math.max(n._w + GAPX, n.hijos.reduce((a, h) => a + ancho(h), 0)); return n._S; };
+        ancho(raiz);
+        const altos = [];
+        const medir = (n, d) => { altos[d] = Math.max(altos[d] || 0, n._h); n.hijos.forEach((h) => medir(h, d + 1)); };
+        medir(raiz, 0);
+        const ys = []; let ya = 0; altos.forEach((a, d) => { ys[d] = ya + a / 2; ya += a + GAPY; });
+        const items = [], aristas = [];
+        const colocar = (n, d, izq, color, padre) => {
+            const it = { n, nivel: d, cx: izq + n._S / 2, cy: ys[d], color, raiz: d === 0 };
+            it.x = it.cx - n._w / 2; items.push(it);
+            if (padre) {
+                const ym = padre.cy + altos[d - 1] / 2 + GAPY / 2;
+                aristas.push(`M${padre.cx},${padre.cy + padre.n._h / 2} L${padre.cx},${ym} L${it.cx},${ym} L${it.cx},${it.cy - n._h / 2}`);
+            }
+            let x = izq + (n._S - n.hijos.reduce((a, h) => a + h._S, 0)) / 2;
+            n.hijos.forEach((h, i) => { colocar(h, d + 1, x, d === 0 ? ORG_COLORES[i % ORG_COLORES.length] : color, it); x += h._S; });
+        };
+        colocar(raiz, 0, 0, '#6b7390', null);
+        let svg = aristas.map((d, i) => `<path class="org-e" style="animation-delay:${0.1 + i * 0.03}s" d="${d}" fill="none" stroke="#98a1b8" stroke-width="2.2" stroke-linejoin="round"/>`).join('');
+        items.forEach((it, i) => { svg += orgCaja(it, uid, i, it.nivel === 1); });
+        const pad = 30;
+        return orgEnvoltura(Math.ceil(raiz._S + pad * 2 - GAPX), Math.ceil(ya - GAPY + pad * 2), `<g transform="translate(${pad - GAPX / 2},${pad})">${svg}</g>`, uid);
+    }
+
+    // Mapa conceptual: conceptos conectados con palabras de enlace
+    function orgConceptualSVG(datos) {
+        const uid = ++orgContador;
+        const rel = (datos.relaciones || datos.enlaces || []).filter((r) => r && r.de && r.a).slice(0, 26);
+        if (!rel.length) throw new Error('sin relaciones');
+        const nombres = [];
+        rel.forEach((r) => [r.de, r.a].forEach((nm) => { if (!nombres.includes(nm)) nombres.push(nm); }));
+        if (nombres.length > 18) throw new Error('demasiados conceptos');
+        const N = nombres.length, idx = (nm) => nombres.indexOf(nm), nivel = Array(N).fill(0);
+        // nivel = distancia mínima desde un concepto "raíz" (sin enlaces entrantes; si no hay, el primero)
+        const entrantes = Array(N).fill(0);
+        rel.forEach((r) => { if (idx(r.de) !== idx(r.a)) entrantes[idx(r.a)]++; });
+        let raices = nombres.map((_, i) => i).filter((i) => !entrantes[i]);
+        if (!raices.length) raices = [0];
+        const visto = Array(N).fill(false); let cola = raices.slice();
+        raices.forEach((i) => { visto[i] = true; });
+        while (cola.length) {
+            const sig = [];
+            cola.forEach((a) => rel.forEach((r) => { if (idx(r.de) === a) { const b = idx(r.a); if (!visto[b]) { visto[b] = true; nivel[b] = nivel[a] + 1; sig.push(b); } } }));
+            cola = sig;
+        }
+        const nodos = nombres.map((nm, i) => {
+            const l = orgEnvolver(nm, 18, 3), w = Math.max(...l.map((x) => orgAnchoTexto(x, 14.5))) + 30;
+            return { nm, i, l, w, h: l.length * 18 + 18, nivel: nivel[i], ord: i };
+        });
+        const capas = []; nodos.forEach((n) => { (capas[n.nivel] = capas[n.nivel] || []).push(n); });
+        for (let pasada = 0; pasada < 3; pasada++) {
+            capas.forEach((capa, d) => {
+                if (!capa || d === 0) return;
+                capa.forEach((n) => {
+                    const padres = rel.filter((r) => idx(r.a) === n.i && nodos[idx(r.de)].nivel < d).map((r) => nodos[idx(r.de)].ord);
+                    n.bar = padres.length ? padres.reduce((a, b) => a + b, 0) / padres.length : n.ord;
+                });
+                capa.sort((a, b) => a.bar - b.bar);
+                capa.forEach((n, k) => { n.ord = k; });
+            });
+        }
+        const GX = 44, GY = 116, anchosCapa = capas.map((c) => (c || []).reduce((a, n) => a + n.w, 0) + GX * Math.max(0, (c || []).length - 1));
+        const W = Math.max(...anchosCapa) + 90;
+        let y = 40;
+        capas.forEach((capa) => {
+            if (!capa) return;
+            const alto = Math.max(...capa.map((n) => n.h));
+            let x = (W - (capa.reduce((a, n) => a + n.w, 0) + GX * (capa.length - 1))) / 2;
+            capa.forEach((n) => { n.x = x + n.w / 2; n.y = y + alto / 2; x += n.w + GX; });
+            y += alto + GY;
+        });
+        const H = y - GY + 50;
+        let aristas = '', etiquetas = '';
+        rel.forEach((r, i) => {
+            const a = nodos[idx(r.de)], b = nodos[idx(r.a)];
+            let sx, sy, ex, ey, d;
+            if (b.nivel > a.nivel) { sx = a.x; sy = a.y + a.h / 2; ex = b.x; ey = b.y - b.h / 2; const dy = (ey - sy) / 2; d = `M${sx},${sy} C${sx},${sy + dy} ${ex},${ey - dy} ${ex},${ey}`; }
+            else if (b.nivel < a.nivel) { sx = a.x; sy = a.y - a.h / 2; ex = b.x; ey = b.y + b.h / 2; const dy = (sy - ey) / 2; d = `M${sx},${sy} C${sx},${sy - dy} ${ex},${ey + dy} ${ex},${ey}`; }
+            else { const der = b.x > a.x; sx = a.x + (der ? a.w / 2 : -a.w / 2); sy = a.y; ex = b.x + (der ? -b.w / 2 : b.w / 2); ey = b.y; d = `M${sx},${sy} L${ex},${ey}`; }
+            aristas += `<path class="org-e" style="animation-delay:${0.1 + i * 0.04}s" d="${d}" fill="none" stroke="#8b93a7" stroke-width="2" marker-end="url(#f${uid})"/>`;
+            const fr = b.nivel !== a.nivel ? 0.62 : 0.5, mx = sx + (ex - sx) * fr, my = sy + (ey - sy) * fr, tx = String(r.r || ''), tw = orgAnchoTexto(tx, 12) + 16;
+            if (tx) etiquetas += `<g class="org-n" style="animation-delay:${0.3 + i * 0.04}s"><rect x="${mx - tw / 2}" y="${my - 11}" width="${tw}" height="22" rx="11" fill="#ffffff" stroke="#cfd6ea"/>${orgTexto([tx], mx, my - 8, 12, '#44506b', 600)}</g>`;
+        });
+        let cajas = '';
+        nodos.forEach((n, i) => {
+            const c = ORG_COLORES[n.nivel % ORG_COLORES.length];
+            const it = { n: { _w: n.w, _h: n.h, _l: n.l, _tam: 14.5 }, cx: n.x, cy: n.y, color: c };
+            cajas += orgCaja(it, uid, i, n.nivel === 0);
+        });
+        let titulo = '', off = 0;
+        if (datos.titulo) { titulo = `<text x="${W / 2}" y="30" text-anchor="middle" font-size="20" font-weight="800" fill="#1b2236" font-family="${ORG_FUENTE}">${orgEsc(datos.titulo)}</text>`; off = 38; }
+        return orgEnvoltura(Math.ceil(W), Math.ceil(H + off), titulo + `<g transform="translate(0,${off})">${aristas}${cajas}${etiquetas}</g>`, uid);
+    }
+
+    // Diagrama de Venn (2 o 3 conjuntos)
+    function orgVennSVG(datos) {
+        const uid = ++orgContador;
+        const conj = (datos.conjuntos || []).filter((c) => c && c.t).slice(0, 3);
+        if (conj.length < 2) throw new Error('faltan conjuntos');
+        const comun = (datos.comun || datos.interseccion || []).slice(0, 5);
+        const R = conj.length === 2 ? 150 : 138;
+        const cen = conj.length === 2 ? [[-R * 0.6, 0], [R * 0.6, 0]] : [[-R * 0.56, -R * 0.33], [R * 0.56, -R * 0.33], [0, R * 0.68]];
+        const out = conj.length === 2 ? [[-R * 0.62, 0], [R * 0.62, 0]] : [[-R * 0.82, -R * 0.45], [R * 0.82, -R * 0.45], [0, R * 0.98]];
+        const lista = (items, cx, cy, color) => {
+            const its = (items || []).slice(0, 5).map((t) => '• ' + String(t).slice(0, 17));
+            return orgTexto(its, cx, cy - its.length * 8.5, 12.5, '#1b2236', 500);
+        };
+        let svg = '';
+        conj.forEach((c, i) => { svg += `<circle class="org-n" style="animation-delay:${i * 0.12}s" cx="${cen[i][0]}" cy="${cen[i][1]}" r="${R}" fill="${ORG_COLORES[i * 2 % ORG_COLORES.length]}" fill-opacity=".2" stroke="${ORG_COLORES[i * 2 % ORG_COLORES.length]}" stroke-width="2.5"/>`; });
+        conj.forEach((c, i) => {
+            const col = ORG_COLORES[i * 2 % ORG_COLORES.length];
+            const ny = conj.length === 3 && i === 2 ? cen[i][1] + R + 24 : cen[i][1] - R - 10;
+            svg += orgTexto([String(c.t).slice(0, 26)], cen[i][0], ny - 12, 16, col, 800);
+            svg += lista(c.items, out[i][0], out[i][1], col);
+        });
+        if (comun.length) svg += `<g>${orgTexto(['Común'], 0, (conj.length === 2 ? 0 : -R * 0.05) - comun.length * 8.5 - 17, 11.5, '#44506b', 700)}</g>` + lista(comun, 0, (conj.length === 2 ? 0 : -R * 0.05), '#000');
+        const bx = R * 0.6 + R + 40, by0 = conj.length === 3 ? -(R * 1.33 + 42) : -(R + 42), by1 = conj.length === 3 ? R * 0.68 + R + 50 : R + 30;
+        const W = Math.ceil(bx * 2), tOff = datos.titulo ? 44 : 10;
+        const H = Math.ceil(by1 - by0 + tOff + 20);
+        const tit = datos.titulo ? `<text x="${W / 2}" y="32" text-anchor="middle" font-size="20" font-weight="800" fill="#1b2236" font-family="${ORG_FUENTE}">${orgEsc(datos.titulo)}</text>` : '';
+        return orgEnvoltura(W, H, tit + `<g transform="translate(${W / 2},${-by0 + tOff})">${svg}</g>`, uid);
+    }
+
+    // Causa-efecto (espina de pescado / Ishikawa)
+    function orgIshikawaSVG(datos) {
+        const uid = ++orgContador;
+        const cats = (datos.causas || datos.nodos || datos.ramas || []).filter((c) => c && c.t).slice(0, 6);
+        if (!cats.length) throw new Error('sin causas');
+        const pares = Math.ceil(cats.length / 2), paso = 270, largo = 170, headW = 176;
+        const W = 70 + pares * paso + headW + 30, tOff = datos.titulo ? 44 : 0, H = 2 * (largo + 54) + tOff, yc = H / 2 + tOff / 2;
+        const efecto = orgEnvolver(datos.efecto || datos.titulo || 'Efecto', 16, 4);
+        let svg = '', xe = W - headW - 14;
+        svg += `<line class="org-e" x1="30" y1="${yc}" x2="${xe}" y2="${yc}" stroke="#3c4663" stroke-width="5" stroke-linecap="round"/>`;
+        cats.forEach((c, i) => {
+            const arriba = i % 2 === 0, p = Math.floor(i / 2), ax = 70 + (p + 1) * paso - 30, ox = ax - 120, oy = arriba ? yc - largo : yc + largo, col = ORG_COLORES[i % ORG_COLORES.length];
+            svg += `<line class="org-e" style="animation-delay:${0.2 + i * 0.1}s" x1="${ox}" y1="${oy}" x2="${ax}" y2="${yc}" stroke="${col}" stroke-width="3.4" stroke-linecap="round"/>`;
+            const bw = Math.max(110, orgAnchoTexto(c.t, 14) + 28);
+            svg += `<g class="org-n" style="animation-delay:${0.15 + i * 0.1}s"><rect x="${ox - bw / 2}" y="${oy + (arriba ? -34 : 4)}" width="${bw}" height="30" rx="15" fill="${col}"/>${orgTexto([String(c.t).slice(0, 24)], ox, oy + (arriba ? -34 : 4) + 6, 14, '#ffffff', 700)}</g>`;
+            const subs = (c.hijos || c.causas || []).map((h) => (typeof h === 'string' ? h : (h && h.t) || '')).filter(Boolean).slice(0, 4);
+            subs.forEach((s, j) => {
+                const f = (j + 1) / (subs.length + 1), px = ox + (ax - ox) * f, py = oy + (yc - oy) * f;
+                const lin = orgEnvolver(String(s), 26, 2);
+                svg += `<line x1="${px - 16}" y1="${py}" x2="${px}" y2="${py}" stroke="${col}" stroke-width="2"/>` + orgTexto(lin, px - 20, py - lin.length * 8.25, 12.5, '#1b2236', 500, 'end');
+            });
+        });
+        const hh = efecto.length * 20 + 30;
+        svg += `<g class="org-n" style="animation-delay:.5s"><rect x="${xe}" y="${yc - hh / 2}" width="${headW}" height="${hh}" rx="18" fill="url(#g${uid})"/>${orgTexto(efecto, xe + headW / 2, yc - hh / 2 + 15, 15, '#ffffff', 800)}</g>`;
+        const tit = datos.titulo ? `<text x="24" y="32" font-size="20" font-weight="800" fill="#1b2236" font-family="${ORG_FUENTE}">${orgEsc(datos.titulo)}</text>` : '';
+        return orgEnvoltura(Math.ceil(W), Math.ceil(H), tit + svg, uid);
+    }
+
+    // Diagrama de cuerpo libre (física). La IA indica el tipo de cada fuerza y la app
+    // calcula las direcciones correctas (peso, normal, fricción, plano inclinado...).
+    const DCL_TIPOS = {
+        peso: { color: '#e03131', n: 'W' }, normal: { color: '#1971c2', n: 'N' }, friccion: { color: '#e8890c', n: 'fr' },
+        tension: { color: '#2f9e44', n: 'T' }, aplicada: { color: '#7048e8', n: 'F' }, empuje: { color: '#0c8599', n: 'E' }, elastica: { color: '#c2255c', n: 'Fe' },
+    };
+    function orgDclSVG(datos) {
+        const uid = ++orgContador;
+        const grados = Math.max(0, Math.min(75, Number(datos.angulo) || 0));
+        const inclinado = grados > 0 || /inclin/i.test(String(datos.superficie || ''));
+        const th = inclinado ? (grados || 30) : 0, rad = th * Math.PI / 180;
+        const fuerzas = (datos.fuerzas || []).filter((f) => f && typeof f === 'object').slice(0, 7);
+        if (!fuerzas.length) throw new Error('sin fuerzas');
+        const bw = 126, bh = 66, L = 150;
+        const FICHAS = { derecha: 0, arriba: 90, izquierda: 180, abajo: -90, 'plano-arriba': th, 'plano-abajo': th + 180, perpendicular: 90 + th, 'hacia-plano': th - 90 };
+        const aGrados = (v, def) => (typeof v === 'number' ? v : (String(v || '') in FICHAS ? FICHAS[String(v)] : def));
+        const dir = (a) => [Math.cos(a * Math.PI / 180), -Math.sin(a * Math.PI / 180)];
+        const u = [Math.cos(rad), -Math.sin(rad)], nrm = [-Math.sin(rad), -Math.cos(rad)];
+        const lista = fuerzas.map((f) => {
+            const tipo = DCL_TIPOS[String(f.t || f.tipo || '').toLowerCase().replace(/[íi]/g, 'i').replace('fricción', 'friccion')] ? String(f.t || f.tipo).toLowerCase().replace('fricción', 'friccion') : 'aplicada';
+            const meta = DCL_TIPOS[tipo];
+            let ang, mag;
+            if (tipo === 'peso') { ang = -90; mag = 1; }
+            else if (tipo === 'normal') { ang = 90 + th; mag = inclinado ? Math.max(0.4, Math.cos(rad)) : 1; }
+            else if (tipo === 'friccion') { const s = String(f.sentido || f.ang || ''); ang = inclinado ? (/abajo/.test(s) ? th + 180 : th) : (/der/.test(s) ? 0 : 180); mag = 0.5; }
+            else if (tipo === 'tension') { ang = aGrados(f.ang, 90); mag = 0.85; }
+            else { ang = aGrados(f.ang, inclinado ? th : 0); mag = 0.85; }
+            if (typeof f.ang === 'number' && tipo !== 'peso') ang = f.ang;
+            if (typeof f.mag === 'number') mag = Math.max(0.2, Math.min(1.3, f.mag));
+            return { f, tipo, meta, ang, len: L * mag, etiqueta: String(f.etiqueta || f.e || meta.n).slice(0, 26) };
+        });
+        // geometría
+        const P = [bh / 2 * Math.sin(rad), bh / 2 * Math.cos(rad)];
+        const pts = [], defs = []; let svg = '';
+        const marcador = (id, c) => `<marker id="${id}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`;
+        if (inclinado) {
+            const A = [P[0] - 250 * u[0], P[1] - 250 * u[1]], B = [P[0] + 250 * u[0], P[1] + 250 * u[1]], D = [B[0], A[1]];
+            svg += `<polygon points="${A} ${B} ${D}" fill="#e9ecf4" stroke="#8b93a7" stroke-width="2" stroke-linejoin="round"/>`;
+            const r1 = 58, e = [A[0] + r1 * Math.cos(rad), A[1] - r1 * Math.sin(rad)];
+            svg += `<path d="M${A[0] + r1},${A[1]} A${r1},${r1} 0 0 0 ${e[0]},${e[1]}" fill="none" stroke="#44506b" stroke-width="2"/>` + orgTexto([`θ = ${th}°`], A[0] + 98, A[1] - 22, 14, '#44506b', 700);
+            pts.push(A, B, D, [A[0] + 150, A[1] - 40]);
+        } else if (/ning|colg|aire|libre|sin/i.test(String(datos.superficie || ''))) {
+            pts.push([-120, 0], [120, 0]);
+        } else {
+            let hach = '';
+            for (let x = -250; x < 250; x += 16) hach += `<line x1="${x}" y1="${bh / 2 + 24}" x2="${x + 14}" y2="${bh / 2 + 2}" stroke="#a7afc4" stroke-width="1.6"/>`;
+            svg += `<rect x="-260" y="${bh / 2}" width="520" height="26" fill="#eef0f7"/>${hach}<line x1="-260" y1="${bh / 2}" x2="260" y2="${bh / 2}" stroke="#44506b" stroke-width="3"/>`;
+            pts.push([-260, bh / 2 + 26], [260, bh / 2 + 26]);
+        }
+        // indicador de ejes (en una esquina libre)
+        {
+            const O = inclinado ? [P[0] + 250 * u[0] - 118, P[1] - 250 * u[1] * 0 + (250 * Math.sin(rad)) + 0 - 20 - 0] : [205, -26];
+            if (inclinado) { O[0] = P[0] + 250 * u[0] - 120; O[1] = (P[1] - 250 * u[1]) - 38; }
+            defs.push(marcador(`ax${uid}`, '#7a849c'));
+            [[u, 'x'], [nrm, 'y']].forEach(([v, nm]) => {
+                const e = [O[0] + v[0] * 62, O[1] + v[1] * 62];
+                svg += `<line x1="${O[0]}" y1="${O[1]}" x2="${e[0]}" y2="${e[1]}" stroke="#7a849c" stroke-width="2.2" marker-end="url(#ax${uid})"/>` + orgTexto([nm], e[0] + v[0] * 13 - 3, e[1] + v[1] * 13 - 8, 14, '#5b6478', 700);
+                pts.push(e, [e[0] + v[0] * 20, e[1] + v[1] * 20]);
+            });
+            pts.push(O);
+        }
+        // cuerpo
+        svg += `<g transform="rotate(${-th})"><rect x="${-bw / 2}" y="${-bh / 2}" width="${bw}" height="${bh}" rx="7" fill="#dbe4ff" stroke="#4f6bff" stroke-width="2.4"/>${datos.cuerpo ? `<text x="${-bw / 2 + 6}" y="${bh / 2 - 10}" font-size="13" font-weight="800" fill="#2b3558" font-family="${ORG_FUENTE}" paint-order="stroke" stroke="#dbe4ff" stroke-width="3">${orgEsc(String(datos.cuerpo).slice(0, 14))}</text>` : ''}</g>`;
+        pts.push([-70, -70], [70, 70], [-70, 70], [70, -70]);
+        // componentes
+        const comp = (ang, len, c, etq) => {
+            const v = dir(ang), id = `cm${uid}${defs.length}`; defs.push(marcador(id, c));
+            const e = [v[0] * len, v[1] * len], per = [-v[1] * 14, v[0] * 14];
+            svg += `<line x1="0" y1="0" x2="${e[0]}" y2="${e[1]}" stroke="${c}" stroke-width="2.4" stroke-dasharray="7 5" opacity=".8" marker-end="url(#${id})"/>`;
+            svg += labelDcl([e[0] + per[0], e[1] + per[1]], v, etq, c, 13);
+        };
+        const labelDcl = (e, v, etq, c, tam) => {
+            const lx = e[0] + v[0] * 12, ly = e[1] + v[1] * 12 + (v[1] > 0.35 ? 13 : (v[1] < -0.35 ? -3 : 4)), an = v[0] > 0.3 ? 'start' : (v[0] < -0.3 ? 'end' : 'middle'), w = orgAnchoTexto(etq, tam);
+            pts.push([an === 'start' ? lx + w : (an === 'end' ? lx - w : lx + w / 2), ly], [an === 'middle' ? lx - w / 2 : lx, ly]);
+            return `<text x="${lx}" y="${ly}" font-size="${tam}" font-weight="800" fill="${c}" text-anchor="${an}" font-family="${ORG_FUENTE}" paint-order="stroke" stroke="#ffffff" stroke-width="4" stroke-linejoin="round">${orgEsc(etq)}</text>`;
+        };
+        if (datos.componentes && inclinado) {
+            const pe = lista.find((x) => x.tipo === 'peso');
+            if (pe) { comp(th + 180, pe.len * Math.sin(rad), '#f08c8c', 'W sinθ'); comp(th - 90, pe.len * Math.cos(rad), '#f08c8c', 'W cosθ'); }
+        }
+        lista.forEach((x) => { if (x.f.comp && x.tipo !== 'peso') {
+            const v = dir(x.ang), a = (v[0] * u[0] + v[1] * u[1]) * x.len, b = (v[0] * nrm[0] + v[1] * nrm[1]) * x.len;
+            if (Math.abs(a) > 10) comp(th + (a >= 0 ? 0 : 180), Math.abs(a), '#b9a5f5', x.meta.n + 'ₓ');
+            if (Math.abs(b) > 10) comp(th + 90 + (b >= 0 ? 0 : 180), Math.abs(b), '#b9a5f5', x.meta.n + 'ᵧ');
+        } });
+        // fuerzas
+        lista.forEach((x, i) => {
+            const v = dir(x.ang), id = `fz${uid}${i}`; defs.push(marcador(id, x.meta.color));
+            const e = [v[0] * x.len, v[1] * x.len];
+            svg += `<line class="org-e" style="animation-delay:${0.2 + i * 0.1}s" x1="0" y1="0" x2="${e[0]}" y2="${e[1]}" stroke="${x.meta.color}" stroke-width="4" stroke-linecap="round" marker-end="url(#${id})"/>`;
+            svg += labelDcl(e, v, x.etiqueta, x.meta.color, 16);
+            pts.push(e);
+        });
+        svg += `<circle r="5" fill="#1b2236"/>`;
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        pts.forEach((p) => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+        const pad = 30, tOff = datos.titulo ? 46 : 0, eqs = (datos.ecuaciones || []).map(String).slice(0, 6);
+        const Wd = x1 - x0 + pad * 2, W = Math.ceil(Math.max(Wd, 560)), Hd = y1 - y0 + pad * 2;
+        const dx = (W - (x1 - x0)) / 2 - x0, dy = tOff + pad - y0;
+        let extra = datos.titulo ? `<text x="${W / 2}" y="32" text-anchor="middle" font-size="20" font-weight="800" fill="#1b2236" font-family="${ORG_FUENTE}">${orgEsc(datos.titulo)}</text>` : '';
+        let alto = tOff + Hd;
+        let panel = '';
+        if (eqs.length) {
+            const ph = 42 + eqs.length * 25;
+            panel = `<rect x="24" y="${alto}" width="${W - 48}" height="${ph}" rx="14" fill="#f3f5fb" stroke="#d5dbef"/>` + orgTexto(['Ecuaciones'], 44, alto + 12, 13, '#4f6bff', 800, 'start') +
+                eqs.map((q, i) => `<text x="44" y="${alto + 52 + i * 25}" font-size="15" fill="#1b2236" font-weight="600" font-family="${ORG_FUENTE}">${orgEsc(q)}</text>`).join('');
+            alto += ph + 22;
+        }
+        return orgEnvoltura(W, Math.ceil(alto), `${extra}<defs>${defs.join('')}</defs><g transform="translate(${dx},${dy})">${svg}</g>${panel}`, uid);
+    }
+
+    // ---------- Mapa conceptual ilustrado (tarjetas pastel, enlaces y viñetas) ----------
+    const MC_PALETA = [
+        ['#b9ec8a', '#dff6c9', '#f0fbe5'], ['#f6a8b5', '#fbd3da', '#fdeaee'], ['#9fd3ff', '#cfe8ff', '#e8f4ff'],
+        ['#ffd77a', '#ffe8b0', '#fff5da'], ['#cdb8ff', '#e4d8ff', '#f2ebff'], ['#8fe3c9', '#c5f2e4', '#e3faf3'],
+    ];
+    const MC_TINTA = '#1b2236';
+    function orgConceptualIlustradoSVG(datos) {
+        const uid = ++orgContador;
+        const ramas = (datos.ramas || datos.nodos || []).filter((r) => r && r.t).slice(0, 6);
+        if (!ramas.length) throw new Error('sin ramas');
+        const sk = (w, h, f, c, extra) => `<rect x="${w}" y="${h}" ${extra}/>`;
+        const cajaRect = (x, y, w, h, fill, rx) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx || 18}" fill="${fill}" stroke="${MC_TINTA}" stroke-width="3"/>`;
+        const linea = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${MC_TINTA}" stroke-width="3" stroke-linecap="round"/>`;
+        const txt = (lineas, cx, y0, tam, peso, anchor, color) => orgTexto(lineas, cx, y0, tam, color || MC_TINTA, peso, anchor);
+
+        // --- medir tarjetas de las ramas
+        const medirCard = (c, esRama) => {
+            const tl = c.t && !esRama ? orgEnvolver(c.t, 15, 2) : [];
+            const dl = c.d ? orgEnvolver(c.d, 21, 3) : [];
+            const items = (c.items || []).slice(0, 7).map((it) => orgEnvolver(String(it), 20, 2));
+            const wTxt = Math.max(0, ...tl.map((l) => orgAnchoTexto(l, 18) * 1.08), ...dl.map((l) => orgAnchoTexto(l, 14)), ...items.map((ls) => Math.max(...ls.map((l) => orgAnchoTexto(l, 14.5))) + 18));
+            const w = Math.max(150, Math.min(250, wTxt + 40));
+            let h = 16 + tl.length * 22 + (tl.length && (dl.length || items.length) ? 4 : 0) + dl.length * 18 + (dl.length && items.length ? 4 : 0) + items.reduce((a, ls) => a + ls.length * 18 + 4, 0) + (c.e ? 66 : 0) + 12;
+            if (!tl.length && !dl.length && !items.length) h = c.e ? 100 : 50;
+            return { c, tl, dl, items, w, h };
+        };
+        const cols = ramas.map((r, i) => {
+            const hl = orgEnvolver(r.t, 15, 2);
+            const hdr = { l: hl, w: Math.max(...hl.map((l) => orgAnchoTexto(l, 21) * 1.08)) + 46, h: hl.length * 27 + 20 };
+            const enl = r.enlace ? { t: String(r.enlace).slice(0, 28), w: orgAnchoTexto(String(r.enlace).slice(0, 28), 15) * 1.08 + 34, h: 36 } : null;
+            let cards = [];
+            if (Array.isArray(r.hijos) && r.hijos.length) cards = r.hijos.filter((h) => h && (h.t || h.items || h.d)).slice(0, 4).map((h) => medirCard(h, false));
+            else if (r.items || r.d) cards = [medirCard({ d: r.d, items: r.items, e: r.e }, true)];
+            const sumaW = cards.reduce((a, c) => a + c.w, 0) + 22 * Math.max(0, cards.length - 1);
+            return { r, i, hdr, enl, cards, w: Math.max(hdr.w, enl ? enl.w : 0, sumaW), pal: MC_PALETA[i % MC_PALETA.length] };
+        });
+        const GAPC = 34, anchoTotal = cols.reduce((a, c) => a + c.w, 0) + GAPC * (cols.length - 1);
+        const pad = 34;
+        const W = Math.max(anchoTotal + pad * 2, 560);
+        const cx0 = (W - anchoTotal) / 2;
+        // --- títulos
+        const tituloL = orgEnvolver(datos.titulo || 'Mapa conceptual', 28, 2);
+        const tW = Math.max(300, Math.max(...tituloL.map((l) => orgAnchoTexto(l, 34) * 1.1)) + 90), tH = tituloL.length * 42 + 32;
+        const defL = datos.definicion ? orgEnvolver(String(datos.definicion), Math.max(40, Math.min(78, Math.floor((W - 120) / 9))), 4) : [];
+        const dW = defL.length ? Math.min(W - 70, Math.max(...defL.map((l) => orgAnchoTexto(l, 18))) + 70) : 0, dH = defL.length * 25 + 26;
+        let y = 30, svg = '', k = 0;
+        const delay = () => `style="animation-delay:${(0.08 * k++).toFixed(2)}s"`;
+        // título + destellos
+        const tx = W / 2, tTop = y;
+        svg += `<g class="org-n" ${delay()}>` + [[-1, -24], [-1, 0], [-1, 24]].map(([s, dy], j) => {
+            const x1 = tx + s * (tW / 2 + 18), x2 = tx + s * (tW / 2 + 50 - Math.abs(dy) * 0.5);
+            return `<line x1="${x1}" y1="${tTop + tH / 2 + dy * 1.2}" x2="${x2}" y2="${tTop + tH / 2 + dy * 2.1}" stroke="#6fcf4a" stroke-width="8" stroke-linecap="round"/>` +
+                `<line x1="${tx - s * (tW / 2 + 18)}" y1="${tTop + tH / 2 + dy * 1.2}" x2="${tx - s * (tW / 2 + 50 - Math.abs(dy) * 0.5)}" y2="${tTop + tH / 2 + dy * 2.1}" stroke="#6fcf4a" stroke-width="8" stroke-linecap="round"/>`;
+        }).join('') + '</g>';
+        svg += `<g class="org-n" ${delay()}>${cajaRect(tx - tW / 2, tTop, tW, tH, '#cfc8f7', 22)}${txt(tituloL, tx, tTop + 14, 34, 800, 'middle')}</g>`;
+        y += tH;
+        let conec = '';
+        if (defL.length) {
+            conec += linea(tx, y, tx, y + 30);
+            y += 30;
+            svg += `<g class="org-n" ${delay()}>${cajaRect(tx - dW / 2, y, dW, dH, '#fff1d6', 20)}${txt(defL, tx, y + 13, 18, 600, 'middle')}</g>`;
+            y += dH;
+        }
+        // cabeceras
+        const busY1 = y + 30, yH = y + 60;
+        const hAlto = Math.max(...cols.map((c) => c.hdr.h));
+        let x = cx0;
+        cols.forEach((c) => { c.cx = x + c.w / 2; x += c.w + GAPC; });
+        if (cols.length === 1) conec += linea(cols[0].cx, y, cols[0].cx, yH);
+        else {
+            conec += linea(cols[0].cx, busY1, cols[cols.length - 1].cx, busY1) + linea(tx, y, tx, busY1);
+            cols.forEach((c) => { conec += linea(c.cx, busY1, c.cx, yH); });
+        }
+        cols.forEach((c) => {
+            svg += `<g class="org-n" ${delay()}>${cajaRect(c.cx - c.hdr.w / 2, yH, c.hdr.w, hAlto, c.pal[0], 18)}${txt(c.hdr.l, c.cx, yH + (hAlto - c.hdr.l.length * 27) / 2, 21, 800, 'middle')}</g>`;
+        });
+        let yAct = yH + hAlto;
+        // enlaces
+        const hayEnlace = cols.some((c) => c.enl);
+        const yE = yAct + 26;
+        cols.forEach((c) => {
+            if (c.enl) {
+                conec += linea(c.cx, yAct, c.cx, yE);
+                svg += `<g class="org-n" ${delay()}>${cajaRect(c.cx - c.enl.w / 2, yE, c.enl.w, c.enl.h, c.pal[1], 14)}${txt([c.enl.t], c.cx, yE + 8, 15, 700, 'middle')}</g>`;
+            }
+        });
+        const yBaseCards = hayEnlace ? yE + 36 : yAct;
+        const busY2 = yBaseCards + 28, yC = yBaseCards + 56;
+        const cardAlto = Math.max(0, ...cols.flatMap((c) => c.cards.map((cd) => cd.h)));
+        cols.forEach((c) => {
+            if (!c.cards.length) return;
+            const sumaW = c.cards.reduce((a, cd) => a + cd.w, 0) + 22 * (c.cards.length - 1);
+            let xc = c.cx - sumaW / 2;
+            c.cards.forEach((cd) => { cd.cx = xc + cd.w / 2; xc += cd.w + 22; });
+            const origenY = c.enl ? yE + c.enl.h : yAct;
+            if (c.cards.length === 1) conec += linea(c.cx, origenY, c.cards[0].cx, yC);
+            else {
+                conec += linea(c.cx, origenY, c.cx, busY2) + linea(c.cards[0].cx, busY2, c.cards[c.cards.length - 1].cx, busY2);
+                c.cards.forEach((cd) => { conec += linea(cd.cx, busY2, cd.cx, yC); });
+            }
+            c.cards.forEach((cd) => {
+                let g = cajaRect(cd.cx - cd.w / 2, yC, cd.w, cardAlto, c.pal[2], 20), yy = yC + 14;
+                if (cd.tl.length) { g += txt(cd.tl, cd.cx, yy, 18, 800, 'middle'); yy += cd.tl.length * 22 + 4; }
+                if (cd.dl.length) { g += txt(cd.dl, cd.cx, yy, 14, 500, 'middle', '#2d3652'); yy += cd.dl.length * 18 + 4; }
+                const xi = cd.cx - cd.w / 2 + 22;
+                cd.items.forEach((ls) => {
+                    g += `<circle cx="${xi}" cy="${yy + 9}" r="3.2" fill="${MC_TINTA}"/>` + txt(ls, xi + 12, yy, 14.5, 500, 'start');
+                    yy += ls.length * 18 + 4;
+                });
+                if (cd.c.e) g += `<text x="${cd.cx}" y="${yC + cardAlto - 16}" font-size="44" text-anchor="middle" font-family="${ORG_FUENTE}">${orgEsc(cd.c.e)}</text>`;
+                svg += `<g class="org-n" ${delay()}>${g}</g>`;
+            });
+        });
+        const H = (cols.some((c) => c.cards.length) ? yC + cardAlto : yBaseCards) + pad;
+        return orgEnvoltura(Math.ceil(W), Math.ceil(H), `<g class="org-e">${conec}</g>${svg}`, uid);
+    }
+
+    function orgLeerJSON(texto) {
+        let t = String(texto).trim().replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+        const a = t.indexOf('{'), b = t.lastIndexOf('}');
+        if (a >= 0 && b > a) t = t.slice(a, b + 1);
+        try { return JSON.parse(t); } catch (e) { return JSON.parse(t.replace(/,\s*([}\]])/g, '$1')); }
+    }
+    function orgConstruir(texto) {
+        const d = orgLeerJSON(texto);
+        const tipo = String(d.tipo || 'mapa-mental').toLowerCase();
+        if (/tiempo|cronolog/.test(tipo)) return orgListaSVG(d, true);
+        if (/proceso|pasos|secuencia/.test(tipo)) return orgListaSVG(d, false);
+        if (/ciclo|circular/.test(tipo)) return orgCicloSVG(d);
+        if (/dcl|cuerpo|fisica|física|fuerza/.test(tipo)) return orgDclSVG(d);
+        if (/venn/.test(tipo)) return orgVennSVG(d);
+        if (/causa|efecto|ishikawa|espina|pescado/.test(tipo)) return orgIshikawaSVG(d);
+        if (/conceptual/.test(tipo)) return (d.relaciones || d.enlaces) && !(d.ramas || d.nodos) ? orgConceptualSVG(d) : orgConceptualIlustradoSVG(d);
+        if (/organigrama|jerarqu|arbol|árbol/.test(tipo)) return orgOrganigramaSVG(d);
+        if (/esquema|sinopt|llave/.test(tipo)) return orgEsquemaSVG(d);
+        return orgArbolSVG(d, true);
+    }
+
+    function orgExportarPNG(svgEl, nombre) {
+        const w = +svgEl.dataset.w, h = +svgEl.dataset.h;
+        let src = new XMLSerializer().serializeToString(svgEl).replace(/<style>[\s\S]*?<\/style>/, '');
+        const img = new Image();
+        img.onload = () => {
+            const esc = 2, c = document.createElement('canvas'); c.width = w * esc; c.height = h * esc;
+            const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+            c.toBlob((blob) => { if (!blob) return; const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre + '.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, 'image/png');
+        };
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(src);
+    }
+    function orgAmpliar(svgEl) {
+        const fondo = document.createElement('div'); fondo.className = 'org-overlay';
+        const barra = document.createElement('div'); barra.className = 'org-overlay-barra';
+        const w0 = +svgEl.dataset.w;
+        let zoom = Math.max(1, Math.min(2, (window.innerWidth - 40) / w0));
+        const caja = document.createElement('div'); caja.className = 'org-overlay-caja';
+        const copia = svgEl.cloneNode(true);
+        const aplicar = () => { copia.style.maxWidth = 'none'; copia.style.width = (w0 * zoom) + 'px'; copia.style.height = 'auto'; };
+        const mk = (txt, fn) => { const b = document.createElement('button'); b.textContent = txt; b.addEventListener('click', fn); barra.appendChild(b); return b; };
+        mk('➖', () => { zoom = Math.max(0.4, zoom - 0.2); aplicar(); });
+        mk('➕', () => { zoom = Math.min(3.5, zoom + 0.2); aplicar(); });
+        mk('⬇ PNG', () => orgExportarPNG(svgEl, 'organizador-codia'));
+        mk('✕ Cerrar', () => fondo.remove());
+        aplicar(); caja.appendChild(copia); fondo.append(barra, caja);
+        fondo.addEventListener('click', (e) => { if (e.target === fondo) fondo.remove(); });
+        document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { fondo.remove(); document.removeEventListener('keydown', esc); } });
+        document.body.appendChild(fondo);
+    }
+    function dibujarOrganizador(contenedor, texto) {
+        try {
+            const svgTxt = orgConstruir(texto);
+            contenedor.className = 'bloque-diagrama org-wrap';
+            contenedor.innerHTML = svgTxt;
+            const svgEl = contenedor.querySelector('svg');
+            const barra = document.createElement('div'); barra.className = 'org-barra';
+            const b1 = document.createElement('button'); b1.textContent = '⛶ Ampliar'; b1.addEventListener('click', () => orgAmpliar(svgEl));
+            const b2 = document.createElement('button'); b2.textContent = '⬇ Descargar PNG'; b2.addEventListener('click', () => orgExportarPNG(svgEl, 'organizador-codia'));
+            barra.append(b1, b2); contenedor.appendChild(barra);
+            scrollAbajo();
+        } catch (e) {
+            contenedor.className = 'bloque-diagrama error-diagrama';
+            contenedor.textContent = 'No se pudo dibujar el organizador. Pídeme que lo vuelva a intentar.';
+        }
+    }
+
     function crearRenderizador(contenedor, animarBloques) {
         const nodos = [];
         const cursor = document.createElement('span');
         cursor.className = 'cursor-escritura';
 
-        function clave(seg) { return seg.t === 'texto' ? 'texto' : (seg.lang === 'mermaid' ? 'mermaid' : 'codigo:' + seg.lang); }
+        function clave(seg) { return seg.t === 'texto' ? 'texto' : (seg.lang === 'mermaid' ? 'mermaid' : seg.lang === 'organizador' ? 'organizador' : 'codigo:' + seg.lang); }
 
         function crearNodo(seg) {
             let nodo;
@@ -1445,6 +2168,11 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
                 div.className = 'bloque-diagrama dibujando';
                 div.textContent = 'Dibujando diagrama…';
                 nodo = { clave: 'mermaid', el: div, ultimo: null, ancla: null, dibujado: false };
+            } else if (seg.lang === 'organizador') {
+                const div = document.createElement('div');
+                div.className = 'bloque-diagrama dibujando';
+                div.textContent = 'Dibujando organizador…';
+                nodo = { clave: 'organizador', el: div, ultimo: null, ancla: null, dibujado: false };
             } else {
                 const bloque = crearBloqueCodigo(seg.lang);
                 nodo = { clave: 'codigo:' + seg.lang, el: bloque.el, bloque, ultimo: null, ancla: bloque.codeEl };
@@ -1473,6 +2201,8 @@ document.documentElement.setAttribute('data-tema',t);}catch(e){}})();
                     const contenido = seg.t === 'texto' ? seg.c.trim() : seg.c;
                     if (n.clave === 'texto') {
                         if (n.ultimo !== contenido) { escribirTextoEnLinea(n.el, contenido, animarBloques); n.ultimo = contenido; }
+                    } else if (n.clave === 'organizador') {
+                        if ((seg.cerrado || final) && !n.dibujado) { n.dibujado = true; dibujarOrganizador(n.el, contenido); }
                     } else if (n.clave === 'mermaid') {
                         if (seg.cerrado && !n.dibujado) {
                             n.dibujado = true;
